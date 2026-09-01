@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Finanças Pessoais (Supabase)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+  </script>
+  <style>
+    @keyframes marquee {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+    .animate-marquee {
+      display: flex;
+      width: max-content;
+      animation: marquee 70s linear infinite;
+    }
+    .animate-marquee:hover {
+      animation-play-state: paused;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { createClient } from '@supabase/supabase-js';
+    import {
+      Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2, Megaphone, Calendar, X, Eye, RefreshCw
+    } from 'lucide-react';
+
+    // CONFIGURAÇÃO DO SUPABASE (Substitua pelos dados do seu projeto)
+    const SUPABASE_URL = 'https://zvqjtkwaxxtyhfrxmmvk.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_MdSZpVGO7E3ezVOTVEdtFg_OCFdi_Zr';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const CATEGORIES_MAP = {
+      'Cartão de Crédito': ['Fatura', 'Anuidade', 'Parcela', 'Juros/Encargos'],
+      'Comunicação': ['Internet', 'Telefone Fixo', 'Celular/Plano', 'TV por Assinatura'],
+      'Crianças': ['Escola/Creche', 'Brinquedos', 'Vestuário Infantil', 'Atividades/Esportes', 'Pediatra/Saúde'],
+      'Cuidados Pessoais': ['Salão/Barbearia', 'Cosméticos/Perfumaria', 'Farmácia', 'Estética/Academia'],
+      'Dia a Dia': ['Supermercado', 'Padaria', 'Feira/Hortifruti', 'Lanches', 'Conveniência'],
+      'Educação': ['Cursos', 'Livros', 'Mensalidade', 'Material Escolar/Escritório'],
+      'Emprestado': ['Empréstimo Concedido', 'Devolução de Empréstimo', 'Ajuste de Saldo'],
+      'Infraestrutura': ['Aluguel', 'Condomínio', 'Luz (Energia)', 'Água', 'Gás', 'IPTU', 'Manutenção Doméstica'],
+      'Lazer': ['Viagens', 'Streaming/Assinaturas', 'Restaurantes/Bares', 'Cinema/Shows', 'Hobbies'],
+      'Presentes': ['Aniversário', 'Natal', 'Datas Especiais', 'Lembrancinhas'],
+      'Trabalho': ['Salário', 'Bônus/PLR', 'Freelance/Serviços', 'Ferramentas/Softwares'],
+      'Transferência': ['Entre Contas Próprias', 'Aporte Investimentos', 'Resgate Investimentos'],
+      'Transporte': ['Combustível', 'Uber/App', 'Manutenção Veicular', 'Seguro Veicular', 'IPVA/Licenciamento', 'Pedágio/Estacionamento'],
+      'Vestuário': ['Roupas', 'Calçados', 'Acessórios']
+    };
+
+    const GRADIENTS = [
+      { label: 'Roxo / Índigo', value: 'from-indigo-600 to-purple-800' },
+      { label: 'Rosa / Violeta', value: 'from-purple-600 to-pink-700' },
+      { label: 'Verde / Esmeralda', value: 'from-emerald-600 to-teal-800' },
+      { label: 'Azul / Ciano', value: 'from-blue-600 to-cyan-800' },
+      { label: 'Laranja / Amarelo', value: 'from-amber-600 to-orange-800' },
+      { label: 'Cinza / Escuro', value: 'from-slate-700 to-slate-900' }
+    ];
+
+    function App() {
+      const [financeTab, setFinanceTab] = useState('painel');
+      const [loading, setLoading] = useState(true);
+      const [transactions, setTransactions] = useState([]);
+      const [budgets, setBudgets] = useState({});
+      const [cards, setCards] = useState([]);
+      const [editingCategory, setEditingCategory] = useState(null);
+      const [spreadsheetMode, setSpreadsheetMode] = useState(true);
+      const [selectedTxIds, setSelectedTxIds] = useState([]);
+      const [searchTx, setSearchTx] = useState('');
+
+      const [selectedCardForDetails, setSelectedCardForDetails] = useState(null);
+      const [showAddCard, setShowAddCard] = useState(false);
+      const [newCard, setNewCard] = useState({
+        nome: '',
+        titular: 'Talyson',
+        limite: '',
+        faturaAtual: '0',
+        diaFechamento: '',
+        diaVencimento: '',
+        cor: 'from-indigo-600 to-purple-800'
+      });
+
+      // BUSCAR DADOS DO SUPABASE
+      const fetchDatabaseData = async () => {
+        setLoading(true);
+        try {
+          const [cardsRes, budgetsRes, txRes] = await Promise.all([
+            supabase.from('cards').select('*').order('id', { ascending: true }),
+            supabase.from('budgets').select('*'),
+            supabase.from('transactions').select('*').order('data', { ascending: false })
+          ]);
+
+          if (cardsRes.data) {
+            setCards(cardsRes.data.map(c => ({
+              id: c.id,
+              nome: c.nome,
+              titular: c.titular,
+              limite: Number(c.limite),
+              faturaAtual: Number(c.fatura_atual),
+              diaFechamento: c.dia_fechamento,
+              diaVencimento: c.dia_vencimento,
+              cor: c.cor
+            })));
+          }
+
+          if (budgetsRes.data) {
+            const bMap = {};
+            budgetsRes.data.forEach(b => {
+              bMap[b.categoria] = Number(b.valor_planejado);
+            });
+            setBudgets(bMap);
+          }
+
+          if (txRes.data) {
+            setTransactions(txRes.data.map(t => ({
+              id: t.id,
+              data: t.data,
+              origem: t.origem,
+              classificacao: t.classificacao,
+              conta: t.conta,
+              cartaoId: t.cartao_id,
+              entrada: Number(t.entrada),
+              saída: Number(t.saida),
+              comentario: t.comentario,
+              individuo: t.individuo,
+              operacao: t.operacao
+            })));
+          }
+        } catch (err) {
+          console.error("Erro ao carregar dados do Supabase:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchDatabaseData();
+      }, []);
+
+      // CÁLCULO DE SALDOS
+      const talysonBalance = useMemo(() => {
+        return transactions
+          .filter(t => t.conta === 'Conta Talyson')
+          .reduce((acc, t) => {
+            const entrada = Number(t.entrada) || 0;
+            const saida = t.operacao === 'Crédito' ? 0 : (Number(t.saída) || 0);
+            return acc + entrada - saida;
+          }, 0.00);
+      }, [transactions]);
+
+      const karlaBalance = useMemo(() => {
+        return transactions
+          .filter(t => t.conta === 'Conta Karla')
+          .reduce((acc, t) => {
+            const entrada = Number(t.entrada) || 0;
+            const saida = t.operacao === 'Crédito' ? 0 : (Number(t.saída) || 0);
+            return acc + entrada - saida;
+          }, 0.00);
+      }, [transactions]);
+
+      const consolidatedBalance = talysonBalance + karlaBalance;
+
+      const getCardInvoice = (cardId, baseValue) => {
+        const creditSum = transactions
+          .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId))
+          .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+        return (Number(baseValue) || 0) + creditSum;
+      };
+
+      const totalFaturasCartoes = useMemo(() => {
+        return cards.reduce((acc, c) => acc + getCardInvoice(c.id, c.faturaAtual), 0);
+      }, [cards, transactions]);
+
+      const expenseCategories = useMemo(() => Object.keys(CATEGORIES_MAP).filter(cat => cat !== 'Trabalho'), []);
+
+      const totalExpensePlanned = useMemo(() => {
+        return expenseCategories.reduce((sum, cat) => sum + (budgets[cat] || 0), 0);
+      }, [budgets, expenseCategories]);
+
+      const totalExpenseExecuted = useMemo(() => {
+        return transactions
+          .filter(t => expenseCategories.includes(t.origem))
+          .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+      }, [transactions, expenseCategories]);
+
+      const totalExpenseRemaining = totalExpensePlanned - totalExpenseExecuted;
+      const globalExpensePercentage = totalExpensePlanned > 0 ? (totalExpenseExecuted / totalExpensePlanned) * 100 : 0;
+
+      const tickerItems = useMemo(() => {
+        const items = [
+          { icon: '🎯', label: 'Teto Orçamentário', value: `R$ ${totalExpensePlanned.toFixed(2)}`, colorClass: 'text-indigo-400' },
+          { icon: '💸', label: 'Total Executado', value: `R$ ${totalExpenseExecuted.toFixed(2)} (${globalExpensePercentage.toFixed(1)}%)`, colorClass: 'text-amber-400' },
+          { icon: '💳', label: 'Total Faturas Cartões', value: `R$ ${totalFaturasCartoes.toFixed(2)}`, colorClass: 'text-purple-400' },
+          { icon: '💰', label: 'Saldo Restante Geral', value: `R$ ${totalExpenseRemaining.toFixed(2)}`, colorClass: totalExpenseRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+        ];
+
+        expenseCategories.forEach(cat => {
+          const planned = budgets[cat] || 0;
+          if (planned <= 0) return;
+          const executed = transactions.filter(t => t.origem === cat).reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+          const pct = (executed / planned) * 100;
+
+          if (pct >= 100) {
+            items.push({ icon: '🚨', label: `ALERTA: ${cat}`, value: `Excedido! (${pct.toFixed(0)}%) - R$ ${executed.toFixed(2)} / R$ ${planned.toFixed(2)}`, colorClass: 'text-rose-400 font-bold' });
+          } else if (pct >= 75) {
+            items.push({ icon: '⚠️', label: `Atenção: ${cat}`, value: `Atingiu ${pct.toFixed(0)}% da meta`, colorClass: 'text-amber-300 font-semibold' });
+          }
+        });
+
+        return items;
+      }, [expenseCategories, budgets, transactions, totalExpensePlanned, totalExpenseExecuted, totalExpenseRemaining, globalExpensePercentage, totalFaturasCartoes]);
+
+      const filteredTransactions = useMemo(() => {
+        return [...transactions]
+          .sort((a, b) => b.id - a.id)
+          .filter(t => t.comentario.toLowerCase().includes(searchTx.toLowerCase()) || t.origem.toLowerCase().includes(searchTx.toLowerCase()));
+      }, [transactions, searchTx]);
+
+      // AÇÕES DO BANCO DE DADOS
+      const handleAddTransactionRow = async () => {
+        const defaultOrigem = 'Dia a Dia';
+        const defaultCard = cards[0]?.id || null;
+        
+        const payload = {
+          data: new Date().toISOString().split('T')[0],
+          origem: defaultOrigem,
+          classificacao: CATEGORIES_MAP[defaultOrigem][0],
+          conta: 'Conta Talyson',
+          cartao_id: defaultCard,
+          entrada: 0,
+          saida: 0,
+          comentario: 'Novo lançamento',
+          individuo: 'Ambos',
+          operacao: 'Pix'
+        };
+
+        const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
+        
+        if (!error && data) {
+          const newRow = {
+            id: data.id,
+            data: data.data,
+            origem: data.origem,
+            classificacao: data.classificacao,
+            conta: data.conta,
+            cartaoId: data.cartao_id,
+            entrada: Number(data.entrada),
+            saída: Number(data.saida),
+            comentario: data.comentario,
+            individuo: data.individuo,
+            operacao: data.operacao
+          };
+          setTransactions([newRow, ...transactions]);
+        }
+      };
+
+      const handleUpdateTx = async (id, field, value) => {
+        const txTarget = transactions.find(t => t.id === id);
+        if (!txTarget) return;
+
+        const updatedTx = { ...txTarget, [field]: value };
+        if (field === 'origem' && CATEGORIES_MAP[value]) {
+          updatedTx.classificacao = CATEGORIES_MAP[value][0];
+        }
+        if (field === 'operacao' && value === 'Crédito' && !updatedTx.cartaoId && cards.length > 0) {
+          updatedTx.cartaoId = cards[0].id;
+        }
+
+        setTransactions(prev => prev.map(t => t.id === id ? updatedTx : t));
+
+        const dbPayload = {
+          data: updatedTx.data,
+          origem: updatedTx.origem,
+          classificacao: updatedTx.classificacao,
+          conta: updatedTx.conta,
+          cartao_id: updatedTx.cartaoId,
+          entrada: updatedTx.entrada,
+          saida: updatedTx.saída,
+          comentario: updatedTx.comentario,
+          individuo: updatedTx.individuo,
+          operacao: updatedTx.operacao
+        };
+
+        await supabase.from('transactions').update(dbPayload).eq('id', id);
+      };
+
+      const handleDeleteSingleTx = async (txId) => {
+        setTransactions(prev => prev.filter(t => t.id !== txId));
+        await supabase.from('transactions').delete().eq('id', txId);
+      };
+
+      const handleDeleteSelectedTx = async () => {
+        const idsToDelete = [...selectedTxIds];
+        setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+        setSelectedTxIds([]);
+        await supabase.from('transactions').delete().in('id', idsToDelete);
+      };
+
+      const handleAddCardSubmit = async (e) => {
+        e.preventDefault();
+        if (!newCard.nome || !newCard.limite) return;
+
+        const payload = {
+          nome: newCard.nome,
+          titular: newCard.titular,
+          limite: parseFloat(newCard.limite) || 0,
+          fatura_atual: parseFloat(newCard.faturaAtual) || 0,
+          dia_fechamento: parseInt(newCard.diaFechamento) || 1,
+          dia_vencimento: parseInt(newCard.diaVencimento) || 10,
+          cor: newCard.cor
+        };
+
+        const { data, error } = await supabase.from('cards').insert([payload]).select().single();
+
+        if (!error && data) {
+          setCards([...cards, {
+            id: data.id,
+            nome: data.nome,
+            titular: data.titular,
+            limite: Number(data.limite),
+            faturaAtual: Number(data.fatura_atual),
+            diaFechamento: data.dia_fechamento,
+            diaVencimento: data.dia_vencimento,
+            cor: data.cor
+          }]);
+          setNewCard({
+            nome: '',
+            titular: 'Talyson',
+            limite: '',
+            faturaAtual: '0',
+            diaFechamento: '',
+            diaVencimento: '',
+            cor: 'from-indigo-600 to-purple-800'
+          });
+          setShowAddCard(false);
+        }
+      };
+
+      const handleDeleteCard = async (cardId) => {
+        if (confirm('Tem certeza que deseja remover este cartão?')) {
+          setCards(prev => prev.filter(c => c.id !== cardId));
+          if (selectedCardForDetails && selectedCardForDetails.id === cardId) {
+            setSelectedCardForDetails(null);
+          }
+          await supabase.from('cards').delete().eq('id', cardId);
+        }
+      };
+
+      const handleUpdateCategoryBudget = async (category, value) => {
+        const val = parseFloat(value) || 0;
+        setBudgets(prev => ({ ...prev, [category]: val }));
+        await supabase.from('budgets').upsert({ categoria: category, valor_planejado: val });
+      };
+
+      const handleSelectTx = (id) => {
+        setSelectedTxIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+      };
+
+      const handleSelectAllTx = (e) => {
+        setSelectedTxIds(e.target.checked ? filteredTransactions.map(t => t.id) : []);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* HEADER */}
+          <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-tr from-indigo-500 via-purple-500 to-emerald-400 rounded-xl shadow-lg shadow-indigo-500/20">
+                <Wallet className="w-6 h-6 text-slate-950 font-bold" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white flex items-center gap-2">
+                  Sistema de Finanças Pessoais
+                  <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-indigo-400 border border-slate-700">Supabase DB</span>
+                </h1>
+                <p className="text-xs text-slate-400">Controle Orçamentário e Cartões de Crédito</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 border-l border-slate-800 pl-4">
+              <button 
+                onClick={fetchDatabaseData} 
+                className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+                title="Recarregar do Banco de Dados"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <div className="text-xs">
+                <span className="text-slate-400 text-[10px] block">Talyson (Conta)</span>
+                <span className="font-semibold text-indigo-300">R$ {talysonBalance.toFixed(2)}</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-slate-400 text-[10px] block">Karla (Conta)</span>
+                <span className="font-semibold text-purple-300">R$ {karlaBalance.toFixed(2)}</span>
+              </div>
+            </div>
+          </header>
+
+          {/* CONTEÚDO PRINCIPAL */}
+          <main className="flex-1 flex flex-col overflow-hidden">
+            <div className="p-6 max-w-[1700px] w-full mx-auto space-y-6 overflow-y-auto">
+              {/* NAVEGAÇÃO INTERNA */}
+              <div className="flex gap-2 border-b border-slate-800 pb-3">
+                {[
+                  { id: 'painel', label: 'Painel Geral & Histórico', icon: Wallet },
+                  { id: 'planejamento', label: 'Planejamento de Gastos', icon: Target },
+                  { id: 'cartoes', label: 'Cartões de Crédito', icon: CreditCard }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setFinanceTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      financeTab === tab.id ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <tab.icon className="w-4 h-4" /> {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ABA 1: PAINEL GERAL & HISTÓRICO */}
+              {financeTab === 'painel' && (
+                <div className="space-y-6">
+                  {/* TICKER DE PLANEJAMENTO */}
+                  <div className="bg-slate-900/90 border border-indigo-500/30 rounded-xl overflow-hidden p-2.5 flex items-center gap-3 shadow-lg backdrop-blur">
+                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 shrink-0">
+                      <Megaphone className="w-4 h-4 text-indigo-400 animate-pulse" />
+                      <span className="whitespace-nowrap uppercase tracking-wider text-[11px]">Resumo do Planejamento</span>
+                    </div>
+
+                    <div className="overflow-hidden w-full relative">
+                      <div className="animate-marquee flex items-center gap-8 text-xs font-mono">
+                        {[...tickerItems, ...tickerItems].map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 whitespace-nowrap">
+                            <span className="text-sm">{item.icon}</span>
+                            <span className="text-slate-400">{item.label}:</span>
+                            <span className={`font-semibold ${item.colorClass}`}>{item.value}</span>
+                            <span className="text-slate-700 ml-4 font-normal">•</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARDS DE SALDO */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Talyson</p>
+                      <h3 className="text-2xl font-bold text-white mt-1">R$ {talysonBalance.toFixed(2)}</h3>
+                      <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Karla</p>
+                      <h3 className="text-2xl font-bold text-white mt-1">R$ {karlaBalance.toFixed(2)}</h3>
+                      <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-5">
+                      <p className="text-xs text-indigo-300 font-semibold uppercase">Saldo Consolidado (Contas)</p>
+                      <h3 className="text-3xl font-extrabold text-white mt-1">R$ {consolidatedBalance.toFixed(2)}</h3>
+                      <p className="text-[10px] text-indigo-300/70 mt-1">Disponível em Dinheiro/Pix</p>
+                    </div>
+                    <div className="bg-slate-900 border border-purple-500/30 rounded-xl p-5">
+                      <p className="text-xs text-purple-400 font-semibold uppercase">Total Faturas Cartões</p>
+                      <h3 className="text-2xl font-bold text-purple-300 mt-1">R$ {totalFaturasCartoes.toFixed(2)}</h3>
+                      <p className="text-[10px] text-slate-500 mt-1">Acumulado em Cartões de Crédito</p>
+                    </div>
+                  </div>
+
+                  {/* TABELA PLANILHA HISTÓRICO */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+                    <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold">Histórico de Lançamentos</span>
+                        <button
+                          onClick={() => setSpreadsheetMode(!spreadsheetMode)}
+                          className="text-xs bg-slate-950 border border-slate-800 px-3 py-1 rounded text-indigo-400 font-semibold"
+                        >
+                          {spreadsheetMode ? 'Modo Planilha (Edição Total)' : 'Modo Leitura'}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleAddTransactionRow} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
+                          <Plus className="w-4 h-4" /> Adicionar no Topo
+                        </button>
+                        {selectedTxIds.length > 0 && (
+                          <button onClick={handleDeleteSelectedTx} className="flex items-center gap-1 bg-rose-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
+                            <Trash2 className="w-4 h-4" /> Excluir ({selectedTxIds.length})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                          <tr>
+                            <th className="p-3 w-8"><input type="checkbox" onChange={handleSelectAllTx} /></th>
+                            <th className="p-3 min-w-[130px]">1. Data</th>
+                            <th className="p-3 min-w-[160px]">2. Origem/Destino</th>
+                            <th className="p-3 min-w-[170px]">3. Classificação</th>
+                            <th className="p-3 min-w-[140px]">4. Conta Bancária</th>
+                            <th className="p-3 min-w-[110px]">5. Operação</th>
+                            <th className="p-3 min-w-[160px]">6. Cartão (se Crédito)</th>
+                            <th className="p-3 min-w-[120px] text-right">7. Entrada</th>
+                            <th className="p-3 min-w-[120px] text-right">8. Saída</th>
+                            <th className="p-3 min-w-[200px]">9. Comentário</th>
+                            <th className="p-3 min-w-[120px]">10. Indivíduo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {filteredTransactions.map(tx => (
+                            <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="p-3">
+                                <input type="checkbox" checked={selectedTxIds.includes(tx.id)} onChange={() => handleSelectTx(tx.id)} />
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <input
+                                    type="date"
+                                    value={tx.data}
+                                    onChange={e => handleUpdateTx(tx.id, 'data', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
+                                  />
+                                ) : tx.data}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <select
+                                    value={tx.origem}
+                                    onChange={e => handleUpdateTx(tx.id, 'origem', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 font-medium focus:outline-none focus:border-indigo-500 w-full"
+                                  >
+                                    {Object.keys(CATEGORIES_MAP).map(cat => (
+                                      <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                  </select>
+                                ) : <span className="font-medium text-indigo-300">{tx.origem}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <select
+                                    value={tx.classificacao}
+                                    onChange={e => handleUpdateTx(tx.id, 'classificacao', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none focus:border-indigo-500 w-full"
+                                  >
+                                    {(CATEGORIES_MAP[tx.origem] || []).map(sub => (
+                                      <option key={sub} value={sub}>{sub}</option>
+                                    ))}
+                                  </select>
+                                ) : <span className="text-purple-300">{tx.classificacao}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <select
+                                    value={tx.conta}
+                                    onChange={e => handleUpdateTx(tx.id, 'conta', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
+                                  >
+                                    <option value="Conta Talyson">Conta Talyson</option>
+                                    <option value="Conta Karla">Conta Karla</option>
+                                  </select>
+                                ) : <span className="text-slate-300">{tx.conta}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <select
+                                    value={tx.operacao}
+                                    onChange={e => handleUpdateTx(tx.id, 'operacao', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-teal-300 font-semibold focus:outline-none focus:border-indigo-500 w-full"
+                                  >
+                                    <option value="Pix">Pix</option>
+                                    <option value="Dinheiro">Dinheiro</option>
+                                    <option value="Crédito">Crédito</option>
+                                  </select>
+                                ) : <span className={`font-semibold ${tx.operacao === 'Crédito' ? 'text-purple-400' : 'text-teal-300'}`}>{tx.operacao}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {tx.operacao === 'Crédito' ? (
+                                  spreadsheetMode ? (
+                                    <select
+                                      value={tx.cartaoId || ''}
+                                      onChange={e => handleUpdateTx(tx.id, 'cartaoId', e.target.value)}
+                                      className="bg-slate-950 border border-purple-500/50 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none w-full"
+                                    >
+                                      <option value="">Selecione...</option>
+                                      {cards.map(c => (
+                                        <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span className="text-purple-300 font-medium">
+                                      {cards.find(c => Number(c.id) === Number(tx.cartaoId))?.nome || 'Cartão N/D'}
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-600 font-mono text-[11px]">- N/A -</span>
+                                )}
+                              </td>
+
+                              <td className="p-3 text-right">
+                                {spreadsheetMode ? (
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={tx.entrada}
+                                    onChange={e => handleUpdateTx(tx.id, 'entrada', parseFloat(e.target.value) || 0)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-emerald-400 font-mono text-right w-24 focus:outline-none focus:border-emerald-500"
+                                  />
+                                ) : <span className="font-mono text-emerald-400">R$ {Number(tx.entrada).toFixed(2)}</span>}
+                              </td>
+
+                              <td className="p-3 text-right">
+                                {spreadsheetMode ? (
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={tx.saída}
+                                    onChange={e => handleUpdateTx(tx.id, 'saída', parseFloat(e.target.value) || 0)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-rose-400 font-mono text-right w-24 focus:outline-none focus:border-rose-500"
+                                  />
+                                ) : <span className="font-mono text-rose-400">R$ {Number(tx.saída).toFixed(2)}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <input
+                                    type="text"
+                                    value={tx.comentario}
+                                    onChange={e => handleUpdateTx(tx.id, 'comentario', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-full focus:outline-none focus:border-indigo-500"
+                                  />
+                                ) : <span className="text-slate-300">{tx.comentario}</span>}
+                              </td>
+
+                              <td className="p-3">
+                                {spreadsheetMode ? (
+                                  <select
+                                    value={tx.individuo}
+                                    onChange={e => handleUpdateTx(tx.id, 'individuo', e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300 focus:outline-none focus:border-indigo-500 w-full"
+                                  >
+                                    <option value="Talyson">Talyson</option>
+                                    <option value="Karla">Karla</option>
+                                    <option value="Ambos">Ambos</option>
+                                  </select>
+                                ) : <span className="text-amber-300 font-medium">{tx.individuo}</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ABA 2: PLANEJAMENTO DE GASTOS */}
+              {financeTab === 'planejamento' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <span className="text-xs text-slate-400 font-medium uppercase">Orçamento Total Planejado</span>
+                      <h3 className="text-2xl font-bold text-indigo-400 font-mono mt-1">R$ {totalExpensePlanned.toFixed(2)}</h3>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <span className="text-xs text-slate-400 font-medium uppercase">Total Executado (Gasto Real)</span>
+                      <h3 className="text-2xl font-bold text-amber-400 font-mono mt-1">R$ {totalExpenseExecuted.toFixed(2)}</h3>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <span className="text-xs text-slate-400 font-medium uppercase">Saldo Orçamentário Restante</span>
+                      <h3 className={`text-2xl font-bold font-mono mt-1 ${totalExpenseRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>R$ {totalExpenseRemaining.toFixed(2)}</h3>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-400 font-medium uppercase">Comprometimento Global</span>
+                        <span className="text-xs font-bold font-mono text-indigo-400">{globalExpensePercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden mt-3 border border-slate-800">
+                        <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${Math.min(globalExpensePercentage, 100)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+                    <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Target className="w-4 h-4 text-indigo-400" />
+                        Planejamento por Origem / Destino
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                          <tr>
+                            <th className="p-3 min-w-[180px]">Categoria</th>
+                            <th className="p-3 min-w-[150px] text-right">Planejado (Meta R$)</th>
+                            <th className="p-3 min-w-[140px] text-right">Executado (Saídas R$)</th>
+                            <th className="p-3 min-w-[140px] text-right">Saldo Restante (R$)</th>
+                            <th className="p-3 min-w-[180px]">Comprometimento %</th>
+                            <th className="p-3 min-w-[120px] text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {expenseCategories.map(cat => {
+                            const planned = budgets[cat] || 0;
+                            const executed = transactions.filter(t => t.origem === cat).reduce((acc, t) => acc + (Number(t.saída) || 0), 0);
+                            const diff = planned - executed;
+                            const pct = planned > 0 ? (executed / planned) * 100 : 0;
+                            const isOverBudget = executed > planned && planned > 0;
+
+                            return (
+                              <tr key={cat} className="hover:bg-slate-800/40 transition-colors">
+                                <td className="p-3 font-semibold text-indigo-300">{cat}</td>
+                                <td className="p-3 text-right">
+                                  {editingCategory === cat ? (
+                                    <input
+                                      type="number"
+                                      step="50"
+                                      value={planned}
+                                      onChange={e => handleUpdateCategoryBudget(cat, e.target.value)}
+                                      onBlur={() => setEditingCategory(null)}
+                                      autoFocus
+                                      className="bg-slate-950 border border-indigo-500 rounded px-2 py-1 text-xs text-indigo-300 font-mono text-right w-28 focus:outline-none"
+                                    />
+                                  ) : (
+                                    <button onClick={() => setEditingCategory(cat)} className="font-mono text-indigo-300 hover:text-indigo-200 flex items-center justify-end gap-1.5 ml-auto group">
+                                      <span>R$ {planned.toFixed(2)}</span>
+                                      <Edit3 className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right font-mono text-amber-400 font-medium">R$ {executed.toFixed(2)}</td>
+                                <td className={`p-3 text-right font-mono font-bold ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>R$ {diff.toFixed(2)}</td>
+                                <td className="p-3">
+                                  <span className="font-mono text-[11px] text-slate-300 font-medium block mb-1">{pct.toFixed(1)}%</span>
+                                  <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+                                    <div className={`h-full transition-all duration-500 ${pct > 100 ? 'bg-rose-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  {isOverBudget ? (
+                                    <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold"><AlertTriangle className="w-3 h-3" /> Excedido</span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[10px] font-bold"><CheckCircle2 className="w-3 h-3" /> OK</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ABA 3: CARTÕES DE CRÉDITO */}
+              {financeTab === 'cartoes' && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-indigo-400" />
+                        Gestão de Cartões de Crédito
+                      </h3>
+                      <p className="text-xs text-slate-400">Cadastre e gerencie cartões e sincronize faturas diretamente no banco de dados.</p>
+                    </div>
+                    <button
+                      onClick={() => setShowAddCard(!showAddCard)}
+                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg transition-all"
+                    >
+                      {showAddCard ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                      {showAddCard ? 'Cancelar' : 'Adicionar Cartão'}
+                    </button>
+                  </div>
+
+                  {/* FORMULÁRIO DE ADICIONAR CARTÃO */}
+                  {showAddCard && (
+                    <form onSubmit={handleAddCardSubmit} className="bg-slate-900 border border-indigo-500/30 p-5 rounded-xl shadow-xl space-y-4">
+                      <h4 className="text-sm font-bold text-indigo-300 border-b border-slate-800 pb-2">Cadastrar Novo Cartão de Crédito</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Nome do Cartão</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ex: Itaú Personnalité"
+                            value={newCard.nome}
+                            onChange={e => setNewCard({...newCard, nome: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Titular</label>
+                          <select
+                            value={newCard.titular}
+                            onChange={e => setNewCard({...newCard, titular: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="Talyson">Talyson</option>
+                            <option value="Karla">Karla</option>
+                            <option value="Ambos">Ambos</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Limite Total (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            placeholder="10000.00"
+                            value={newCard.limite}
+                            onChange={e => setNewCard({...newCard, limite: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Fatura Base Inicial (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={newCard.faturaAtual}
+                            onChange={e => setNewCard({...newCard, faturaAtual: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Dia de Fechamento</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            required
+                            placeholder="Ex: 15"
+                            value={newCard.diaFechamento}
+                            onChange={e => setNewCard({...newCard, diaFechamento: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">Dia de Vencimento</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            required
+                            placeholder="Ex: 25"
+                            value={newCard.diaVencimento}
+                            onChange={e => setNewCard({...newCard, diaVencimento: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <label className="block text-slate-400 mb-1 font-medium">Estilo do Cartão (Gradiente)</label>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                            {GRADIENTS.map(g => (
+                              <button
+                                type="button"
+                                key={g.value}
+                                onClick={() => setNewCard({...newCard, cor: g.value})}
+                                className={`p-2 rounded-lg text-[10px] font-semibold text-white bg-gradient-to-r ${g.value} border-2 transition-all ${
+                                  newCard.cor === g.value ? 'border-white scale-105 shadow-md' : 'border-transparent opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                {g.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCard(false)}
+                          className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white"
+                        >
+                          Salvar Cartão
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* GRID DOS CARTÕES */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {cards.map(card => {
+                      const totalFatura = getCardInvoice(card.id, card.faturaAtual);
+                      const limiteDisponivel = card.limite - totalFatura;
+                      const pctUso = card.limite > 0 ? (totalFatura / card.limite) * 100 : 0;
+
+                      return (
+                        <div key={card.id} className={`bg-gradient-to-br ${card.cor} rounded-2xl p-6 text-white shadow-xl space-y-5 relative overflow-hidden flex flex-col justify-between`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-[10px] font-bold tracking-wider uppercase opacity-80 bg-black/20 px-2 py-0.5 rounded-full backdrop-blur">
+                                {card.titular}
+                              </span>
+                              <h4 className="text-xl font-extrabold mt-1">{card.nome}</h4>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <CreditCard className="w-6 h-6 opacity-80" />
+                              <button
+                                onClick={() => handleDeleteCard(card.id)}
+                                className="opacity-60 hover:opacity-100 transition-opacity p-1 bg-black/20 rounded hover:bg-rose-600/50"
+                                title="Excluir Cartão"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="bg-black/20 backdrop-blur rounded-xl p-3 flex justify-between items-center">
+                            <div>
+                              <span className="text-[11px] opacity-80 block">Fatura Atual (Total)</span>
+                              <p className="text-2xl font-black font-mono">R$ {totalFatura.toFixed(2)}</p>
+                            </div>
+                            <button
+                              onClick={() => setSelectedCardForDetails(card)}
+                              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur transition-all"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Ver Movimentações
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs bg-black/10 rounded-xl p-2.5">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                              <div>
+                                <span className="block text-[10px] opacity-75">Fechamento</span>
+                                <span className="font-bold">Dia {card.diaFechamento}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                              <div>
+                                <span className="block text-[10px] opacity-75">Vencimento</span>
+                                <span className="font-bold">Dia {card.diaVencimento}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between opacity-90 font-mono text-[11px]">
+                              <span>Disponível: R$ {limiteDisponivel.toFixed(2)}</span>
+                              <span>Limite: R$ {Number(card.limite).toFixed(2)}</span>
+                            </div>
+                            <div className="w-full bg-black/30 h-2 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-500 ${
+                                  pctUso > 90 ? 'bg-rose-400' : pctUso > 70 ? 'bg-amber-300' : 'bg-emerald-300'
+                                }`}
+                                style={{ width: `${Math.min(pctUso, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* MODAL DE DETALHAMENTO DO CARTÃO */}
+                  {selectedCardForDetails && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                              Fatura Detalhada
+                            </span>
+                            <h3 className="text-xl font-bold text-white mt-1">
+                              {selectedCardForDetails.nome} ({selectedCardForDetails.titular})
+                            </h3>
+                          </div>
+                          <button
+                            onClick={() => setSelectedCardForDetails(null)}
+                            className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        <div className="p-5 bg-slate-900/50 border-b border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase font-semibold">Total da Fatura</span>
+                            <p className="text-xl font-bold text-purple-300 font-mono mt-0.5">
+                              R$ {getCardInvoice(selectedCardForDetails.id, selectedCardForDetails.faturaAtual).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                            <span className="text-[10px] text-slate-400 uppercase font-semibold">Vencimento / Fechamento</span>
+                            <p className="text-sm font-bold text-slate-200 mt-1">
+                              Dia {selectedCardForDetails.diaVencimento} <span className="text-slate-500 font-normal">(Fecha dia {selectedCardForDetails.diaFechamento})</span>
+                            </p>
+                          </div>
+                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] text-slate-400 uppercase font-semibold">Movimentações</span>
+                              <p className="text-xl font-bold text-white font-mono mt-0.5">
+                                {transactions.filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id)).length}
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleAddTransactionRow}
+                              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            >
+                              <Plus className="w-4 h-4" /> Nova Compra
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-5 overflow-y-auto flex-1">
+                          {transactions.filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id)).length === 0 ? (
+                            <div className="text-center py-12 text-slate-500 text-xs">
+                              Nenhuma movimentação lançada para este cartão.
+                            </div>
+                          ) : (
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 sticky top-0">
+                                <tr>
+                                  <th className="p-3 min-w-[130px]">Data</th>
+                                  <th className="p-3 min-w-[150px]">Origem</th>
+                                  <th className="p-3 min-w-[150px]">Classificação</th>
+                                  <th className="p-3 min-w-[110px] text-right">Valor (R$)</th>
+                                  <th className="p-3 min-w-[180px]">Comentário</th>
+                                  <th className="p-3 min-w-[110px]">Indivíduo</th>
+                                  <th className="p-3 w-12 text-center">Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800">
+                                {transactions
+                                  .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id))
+                                  .map(tx => (
+                                    <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                                      <td className="p-3">
+                                        <input
+                                          type="date"
+                                          value={tx.data}
+                                          onChange={e => handleUpdateTx(tx.id, 'data', e.target.value)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
+                                        />
+                                      </td>
+                                      <td className="p-3">
+                                        <select
+                                          value={tx.origem}
+                                          onChange={e => handleUpdateTx(tx.id, 'origem', e.target.value)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 font-medium focus:outline-none focus:border-indigo-500 w-full"
+                                        >
+                                          {Object.keys(CATEGORIES_MAP).map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td className="p-3">
+                                        <select
+                                          value={tx.classificacao}
+                                          onChange={e => handleUpdateTx(tx.id, 'classificacao', e.target.value)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none focus:border-indigo-500 w-full"
+                                        >
+                                          {(CATEGORIES_MAP[tx.origem] || []).map(sub => (
+                                            <option key={sub} value={sub}>{sub}</option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td className="p-3 text-right">
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={tx.saída}
+                                          onChange={e => handleUpdateTx(tx.id, 'saída', parseFloat(e.target.value) || 0)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-rose-400 font-mono text-right w-24 focus:outline-none focus:border-rose-500"
+                                        />
+                                      </td>
+                                      <td className="p-3">
+                                        <input
+                                          type="text"
+                                          value={tx.comentario}
+                                          onChange={e => handleUpdateTx(tx.id, 'comentario', e.target.value)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-full focus:outline-none focus:border-indigo-500"
+                                        />
+                                      </td>
+                                      <td className="p-3">
+                                        <select
+                                          value={tx.individuo}
+                                          onChange={e => handleUpdateTx(tx.id, 'individuo', e.target.value)}
+                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300 focus:outline-none focus:border-indigo-500 w-full"
+                                        >
+                                          <option value="Talyson">Talyson</option>
+                                          <option value="Karla">Karla</option>
+                                          <option value="Ambos">Ambos</option>
+                                        </select>
+                                      </td>
+                                      <td className="p-3 text-center">
+                                        <button
+                                          onClick={() => handleDeleteSingleTx(tx.id)}
+                                          className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded transition-colors"
+                                          title="Excluir movimentação"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+
+                        <div className="p-4 border-t border-slate-800 bg-slate-950 flex justify-end">
+                          <button
+                            onClick={() => setSelectedCardForDetails(null)}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            Fechar Detalhes
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
