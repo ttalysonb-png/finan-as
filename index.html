@@ -42,7 +42,7 @@
       Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2, Megaphone, Calendar, X, Eye, RefreshCw
     } from 'lucide-react';
 
-    // CONFIGURAÇÃO DO SUPABASE (Substitua pelos dados do seu projeto)
+    // CONFIGURAÇÃO DO SUPABASE
     const SUPABASE_URL = 'https://zvqjtkwaxxtyhfrxmmvk.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_MdSZpVGO7E3ezVOTVEdtFg_OCFdi_Zr';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -83,6 +83,21 @@
       const [spreadsheetMode, setSpreadsheetMode] = useState(true);
       const [selectedTxIds, setSelectedTxIds] = useState([]);
       const [searchTx, setSearchTx] = useState('');
+
+      // POP-UP NOVO LANÇAMENTO
+      const [showAddTxModal, setShowAddTxModal] = useState(false);
+      const [newTxForm, setNewTxForm] = useState({
+        data: new Date().toISOString().split('T')[0],
+        origem: 'Dia a Dia',
+        classificacao: 'Supermercado',
+        conta: 'Conta Talyson',
+        operacao: 'Pix',
+        cartaoId: '',
+        entrada: '',
+        saida: '',
+        comentario: '',
+        individuo: 'Ambos'
+      });
 
       const [selectedCardForDetails, setSelectedCardForDetails] = useState(null);
       const [showAddCard, setShowAddCard] = useState(false);
@@ -232,26 +247,25 @@
           .filter(t => t.comentario.toLowerCase().includes(searchTx.toLowerCase()) || t.origem.toLowerCase().includes(searchTx.toLowerCase()));
       }, [transactions, searchTx]);
 
-      // AÇÕES DO BANCO DE DADOS
-      const handleAddTransactionRow = async () => {
-        const defaultOrigem = 'Dia a Dia';
-        const defaultCard = cards[0]?.id || null;
-        
+      // ADICIONAR NOVA TRANSAÇÃO VIA MODAL
+      const handleCreateTransactionSubmit = async (e) => {
+        e.preventDefault();
+
         const payload = {
-          data: new Date().toISOString().split('T')[0],
-          origem: defaultOrigem,
-          classificacao: CATEGORIES_MAP[defaultOrigem][0],
-          conta: 'Conta Talyson',
-          cartao_id: defaultCard,
-          entrada: 0,
-          saida: 0,
-          comentario: 'Novo lançamento',
-          individuo: 'Ambos',
-          operacao: 'Pix'
+          data: newTxForm.data,
+          origem: newTxForm.origem,
+          classificacao: newTxForm.classificacao,
+          conta: newTxForm.conta,
+          cartao_id: newTxForm.operacao === 'Crédito' && newTxForm.cartaoId ? parseInt(newTxForm.cartaoId) : null,
+          entrada: parseFloat(newTxForm.entrada) || 0,
+          saida: parseFloat(newTxForm.saida) || 0,
+          comentario: newTxForm.comentario,
+          individuo: newTxForm.individuo,
+          operacao: newTxForm.operacao
         };
 
         const { data, error } = await supabase.from('transactions').insert([payload]).select().single();
-        
+
         if (!error && data) {
           const newRow = {
             id: data.id,
@@ -267,6 +281,23 @@
             operacao: data.operacao
           };
           setTransactions([newRow, ...transactions]);
+          setShowAddTxModal(false);
+
+          // Reset formulário
+          setNewTxForm({
+            data: new Date().toISOString().split('T')[0],
+            origem: 'Dia a Dia',
+            classificacao: 'Supermercado',
+            conta: 'Conta Talyson',
+            operacao: 'Pix',
+            cartaoId: cards[0]?.id || '',
+            entrada: '',
+            saida: '',
+            comentario: '',
+            individuo: 'Ambos'
+          });
+        } else {
+          alert('Erro ao salvar no Supabase: ' + (error?.message || 'Verifique a conexão'));
         }
       };
 
@@ -491,15 +522,18 @@
                           onClick={() => setSpreadsheetMode(!spreadsheetMode)}
                           className="text-xs bg-slate-950 border border-slate-800 px-3 py-1 rounded text-indigo-400 font-semibold"
                         >
-                          {spreadsheetMode ? 'Modo Planilha (Edição Total)' : 'Modo Leitura'}
+                          {spreadsheetMode ? 'Modo Edição Direta' : 'Modo Leitura'}
                         </button>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={handleAddTransactionRow} className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
-                          <Plus className="w-4 h-4" /> Adicionar no Topo
+                        <button
+                          onClick={() => setShowAddTxModal(true)}
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
+                        >
+                          <Plus className="w-4 h-4" /> Novo Lançamento
                         </button>
                         {selectedTxIds.length > 0 && (
-                          <button onClick={handleDeleteSelectedTx} className="flex items-center gap-1 bg-rose-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
+                          <button onClick={handleDeleteSelectedTx} className="flex items-center gap-1 bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">
                             <Trash2 className="w-4 h-4" /> Excluir ({selectedTxIds.length})
                           </button>
                         )}
@@ -672,6 +706,192 @@
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL / POP-UP NOVO LANÇAMENTO */}
+              {showAddTxModal && (
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">
+                          <Plus className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-white">Novo Lançamento</h3>
+                          <p className="text-xs text-slate-400">Preencha os campos para registrar a movimentação</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowAddTxModal(false)}
+                        className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleCreateTransactionSubmit} className="p-6 space-y-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">1. Data</label>
+                          <input
+                            type="date"
+                            required
+                            value={newTxForm.data}
+                            onChange={e => setNewTxForm({ ...newTxForm, data: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">2. Origem / Categoria</label>
+                          <select
+                            value={newTxForm.origem}
+                            onChange={e => {
+                              const newOrigem = e.target.value;
+                              setNewTxForm({
+                                ...newTxForm,
+                                origem: newOrigem,
+                                classificacao: CATEGORIES_MAP[newOrigem] ? CATEGORIES_MAP[newOrigem][0] : ''
+                              });
+                            }}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-indigo-300 font-medium focus:outline-none focus:border-indigo-500"
+                          >
+                            {Object.keys(CATEGORIES_MAP).map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">3. Classificação</label>
+                          <select
+                            value={newTxForm.classificacao}
+                            onChange={e => setNewTxForm({ ...newTxForm, classificacao: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-purple-300 focus:outline-none focus:border-indigo-500"
+                          >
+                            {(CATEGORIES_MAP[newTxForm.origem] || []).map(sub => (
+                              <option key={sub} value={sub}>{sub}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">4. Conta Bancária</label>
+                          <select
+                            value={newTxForm.conta}
+                            onChange={e => setNewTxForm({ ...newTxForm, conta: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="Conta Talyson">Conta Talyson</option>
+                            <option value="Conta Karla">Conta Karla</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">5. Operação</label>
+                          <select
+                            value={newTxForm.operacao}
+                            onChange={e => {
+                              const op = e.target.value;
+                              setNewTxForm({
+                                ...newTxForm,
+                                operacao: op,
+                                cartaoId: op === 'Crédito' && cards.length > 0 ? (newTxForm.cartaoId || cards[0].id) : ''
+                              });
+                            }}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-teal-300 font-semibold focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="Pix">Pix</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Crédito">Crédito</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">6. Cartão de Crédito</label>
+                          <select
+                            disabled={newTxForm.operacao !== 'Crédito'}
+                            value={newTxForm.cartaoId}
+                            onChange={e => setNewTxForm({ ...newTxForm, cartaoId: e.target.value })}
+                            className={`w-full bg-slate-950 border rounded-lg p-2.5 text-purple-300 focus:outline-none ${
+                              newTxForm.operacao === 'Crédito' ? 'border-purple-500/50' : 'border-slate-800 opacity-50 cursor-not-allowed'
+                            }`}
+                          >
+                            <option value="">Selecione um Cartão...</option>
+                            {cards.map(c => (
+                              <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">7. Valor Entrada (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={newTxForm.entrada}
+                            onChange={e => setNewTxForm({ ...newTxForm, entrada: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-medium">8. Valor Saída (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={newTxForm.saida}
+                            onChange={e => setNewTxForm({ ...newTxForm, saida: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-rose-400 font-mono focus:outline-none focus:border-rose-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-slate-400 mb-1 font-medium">9. Comentário / Descrição</label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Mercado semanal"
+                            value={newTxForm.comentario}
+                            onChange={e => setNewTxForm({ ...newTxForm, comentario: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-slate-400 mb-1 font-medium">10. Indivíduo Responsável</label>
+                          <select
+                            value={newTxForm.individuo}
+                            onChange={e => setNewTxForm({ ...newTxForm, individuo: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-amber-300 font-medium focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="Talyson">Talyson</option>
+                            <option value="Karla">Karla</option>
+                            <option value="Ambos">Ambos</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddTxModal(false)}
+                          className="px-4 py-2.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-5 py-2.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all"
+                        >
+                          Salvar Lançamento
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               )}
@@ -1036,7 +1256,14 @@
                               </p>
                             </div>
                             <button
-                              onClick={handleAddTransactionRow}
+                              onClick={() => {
+                                setNewTxForm(prev => ({
+                                  ...prev,
+                                  operacao: 'Crédito',
+                                  cartaoId: selectedCardForDetails.id
+                                }));
+                                setShowAddTxModal(true);
+                              }}
                               className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
                             >
                               <Plus className="w-4 h-4" /> Nova Compra
