@@ -29,23 +29,44 @@
     .animate-marquee:hover {
       animation-play-state: paused;
     }
+    
+    /* Custom scrollbar for a cleaner look */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a; 
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155; 
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569; 
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
-  <div id="root"></div>
+<body class="bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white overflow-hidden">
+  <div id="root" class="h-screen w-screen flex flex-col"></div>
 
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useMemo } from 'react';
     import { createRoot } from 'react-dom/client';
     import { createClient } from '@supabase/supabase-js';
     import {
-      Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2, Megaphone, Calendar, X, Eye, RefreshCw
+      Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2, Megaphone, Calendar, X, Eye, RefreshCw, ChevronLeft, ChevronRight, Save, Info, Check
     } from 'lucide-react';
 
     // CONFIGURAÇÃO DO SUPABASE
     const SUPABASE_URL = 'https://zvqjtkwaxxtyhfrxmmvk.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_MdSZpVGO7E3ezVOTVEdtFg_OCFdi_Zr';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const MONTHS = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
 
     const CATEGORIES_MAP = {
       'Cartão de Crédito': ['Fatura', 'Anuidade', 'Parcela', 'Juros/Encargos'],
@@ -70,24 +91,44 @@
       { label: 'Verde / Esmeralda', value: 'from-emerald-600 to-teal-800' },
       { label: 'Azul / Ciano', value: 'from-blue-600 to-cyan-800' },
       { label: 'Laranja / Amarelo', value: 'from-amber-600 to-orange-800' },
-      { label: 'Cinza / Escuro', value: 'from-slate-700 to-slate-900' }
+      { label: 'Cinza / Escuro', value: 'from-slate-700 to-slate-900' },
+      { label: 'Vermelho / Rubi', value: 'from-rose-600 to-red-900' }
     ];
 
     function App() {
+      const currentDate = new Date();
+      const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
+      const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
+
       const [financeTab, setFinanceTab] = useState('painel');
       const [loading, setLoading] = useState(true);
       const [transactions, setTransactions] = useState([]);
       const [budgets, setBudgets] = useState({});
       const [cards, setCards] = useState([]);
       const [editingCategory, setEditingCategory] = useState(null);
-      const [spreadsheetMode, setSpreadsheetMode] = useState(true);
+      const [spreadsheetMode, setSpreadsheetMode] = useState(false);
       const [selectedTxIds, setSelectedTxIds] = useState([]);
       const [searchTx, setSearchTx] = useState('');
+
+      // Custom Modals and Toasts (Replacing alert/confirm)
+      const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+      const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
+      };
+
+      // STRING FORMATADA PARA FILTRO (YYYY-MM)
+      const selectedPeriodKey = useMemo(() => {
+        const m = String(selectedMonth).padStart(2, '0');
+        return `${selectedYear}-${m}`;
+      }, [selectedYear, selectedMonth]);
 
       // POP-UP NOVO LANÇAMENTO
       const [showAddTxModal, setShowAddTxModal] = useState(false);
       const [newTxForm, setNewTxForm] = useState({
-        data: new Date().toISOString().split('T')[0],
+        data: `${selectedPeriodKey}-01`,
         origem: 'Dia a Dia',
         classificacao: 'Supermercado',
         conta: 'Conta Talyson',
@@ -98,6 +139,15 @@
         comentario: '',
         individuo: 'Ambos'
       });
+
+      useEffect(() => {
+        const today = new Date().toISOString().split('T')[0];
+        if (today.startsWith(selectedPeriodKey)) {
+          setNewTxForm(prev => ({ ...prev, data: today }));
+        } else {
+          setNewTxForm(prev => ({ ...prev, data: `${selectedPeriodKey}-01` }));
+        }
+      }, [selectedPeriodKey]);
 
       const [selectedCardForDetails, setSelectedCardForDetails] = useState(null);
       const [showAddCard, setShowAddCard] = useState(false);
@@ -118,7 +168,7 @@
           const [cardsRes, budgetsRes, txRes] = await Promise.all([
             supabase.from('cards').select('*').order('id', { ascending: true }),
             supabase.from('budgets').select('*'),
-            supabase.from('transactions').select('*').order('data', { ascending: false })
+            supabase.from('transactions').select('*').order('data', { ascending: false }).order('id', { ascending: false })
           ]);
 
           if (cardsRes.data) {
@@ -137,7 +187,11 @@
           if (budgetsRes.data) {
             const bMap = {};
             budgetsRes.data.forEach(b => {
-              bMap[b.categoria] = Number(b.valor_planejado);
+              if (b.periodo) {
+                bMap[`${b.periodo}_${b.categoria}`] = Number(b.valor_planejado);
+              } else {
+                bMap[b.categoria] = Number(b.valor_planejado);
+              }
             });
             setBudgets(bMap);
           }
@@ -159,6 +213,7 @@
           }
         } catch (err) {
           console.error("Erro ao carregar dados do Supabase:", err);
+          showToast("Erro de conexão com o banco de dados.", "error");
         } finally {
           setLoading(false);
         }
@@ -167,6 +222,36 @@
       useEffect(() => {
         fetchDatabaseData();
       }, []);
+
+      // TRANSAÇÕES FILTRADAS POR MÊS E ANO
+      const monthlyTransactions = useMemo(() => {
+        return transactions.filter(t => t.data && t.data.startsWith(selectedPeriodKey));
+      }, [transactions, selectedPeriodKey]);
+
+      // RETORNA O ORÇAMENTO PLANEJADO DA CATEGORIA NO MÊS SELECIONADO
+      const getCategoryBudget = (category) => {
+        const periodKey = `${selectedPeriodKey}_${category}`;
+        if (budgets[periodKey] !== undefined) return budgets[periodKey];
+        return budgets[category] || 0;
+      };
+
+      const handlePrevMonth = () => {
+        if (selectedMonth === 1) {
+          setSelectedMonth(12);
+          setSelectedYear(prev => prev - 1);
+        } else {
+          setSelectedMonth(prev => prev - 1);
+        }
+      };
+
+      const handleNextMonth = () => {
+        if (selectedMonth === 12) {
+          setSelectedMonth(1);
+          setSelectedYear(prev => prev + 1);
+        } else {
+          setSelectedMonth(prev => prev + 1);
+        }
+      };
 
       // CÁLCULO DE SALDOS
       const talysonBalance = useMemo(() => {
@@ -192,7 +277,7 @@
       const consolidatedBalance = talysonBalance + karlaBalance;
 
       const getCardInvoice = (cardId, baseValue) => {
-        const creditSum = transactions
+        const creditSum = monthlyTransactions
           .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId))
           .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
         return (Number(baseValue) || 0) + creditSum;
@@ -200,35 +285,37 @@
 
       const totalFaturasCartoes = useMemo(() => {
         return cards.reduce((acc, c) => acc + getCardInvoice(c.id, c.faturaAtual), 0);
-      }, [cards, transactions]);
+      }, [cards, monthlyTransactions]);
 
       const expenseCategories = useMemo(() => Object.keys(CATEGORIES_MAP).filter(cat => cat !== 'Trabalho'), []);
 
+      // ORÇAMENTO TOTAL FILTRADO PELO MÊS SELECIONADO
       const totalExpensePlanned = useMemo(() => {
-        return expenseCategories.reduce((sum, cat) => sum + (budgets[cat] || 0), 0);
-      }, [budgets, expenseCategories]);
+        return expenseCategories.reduce((sum, cat) => sum + getCategoryBudget(cat), 0);
+      }, [budgets, expenseCategories, selectedPeriodKey]);
 
       const totalExpenseExecuted = useMemo(() => {
-        return transactions
+        return monthlyTransactions
           .filter(t => expenseCategories.includes(t.origem))
           .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
-      }, [transactions, expenseCategories]);
+      }, [monthlyTransactions, expenseCategories]);
 
       const totalExpenseRemaining = totalExpensePlanned - totalExpenseExecuted;
       const globalExpensePercentage = totalExpensePlanned > 0 ? (totalExpenseExecuted / totalExpensePlanned) * 100 : 0;
 
       const tickerItems = useMemo(() => {
         const items = [
-          { icon: '🎯', label: 'Teto Orçamentário', value: `R$ ${totalExpensePlanned.toFixed(2)}`, colorClass: 'text-indigo-400' },
-          { icon: '💸', label: 'Total Executado', value: `R$ ${totalExpenseExecuted.toFixed(2)} (${globalExpensePercentage.toFixed(1)}%)`, colorClass: 'text-amber-400' },
-          { icon: '💳', label: 'Total Faturas Cartões', value: `R$ ${totalFaturasCartoes.toFixed(2)}`, colorClass: 'text-purple-400' },
-          { icon: '💰', label: 'Saldo Restante Geral', value: `R$ ${totalExpenseRemaining.toFixed(2)}`, colorClass: totalExpenseRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+          { icon: '📅', label: 'Período', value: `${MONTHS[selectedMonth - 1]} / ${selectedYear}`, colorClass: 'text-indigo-300' },
+          { icon: '🎯', label: 'Meta Mensal', value: `R$ ${totalExpensePlanned.toFixed(2)}`, colorClass: 'text-indigo-400' },
+          { icon: '💸', label: 'Executado no Mês', value: `R$ ${totalExpenseExecuted.toFixed(2)} (${globalExpensePercentage.toFixed(1)}%)`, colorClass: 'text-amber-400' },
+          { icon: '💳', label: 'Faturas do Mês', value: `R$ ${totalFaturasCartoes.toFixed(2)}`, colorClass: 'text-purple-400' },
+          { icon: '💰', label: 'Saldo Restante', value: `R$ ${totalExpenseRemaining.toFixed(2)}`, colorClass: totalExpenseRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400' },
         ];
 
         expenseCategories.forEach(cat => {
-          const planned = budgets[cat] || 0;
+          const planned = getCategoryBudget(cat);
           if (planned <= 0) return;
-          const executed = transactions.filter(t => t.origem === cat).reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+          const executed = monthlyTransactions.filter(t => t.origem === cat).reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
           const pct = (executed / planned) * 100;
 
           if (pct >= 100) {
@@ -239,15 +326,14 @@
         });
 
         return items;
-      }, [expenseCategories, budgets, transactions, totalExpensePlanned, totalExpenseExecuted, totalExpenseRemaining, globalExpensePercentage, totalFaturasCartoes]);
+      }, [selectedMonth, selectedYear, expenseCategories, budgets, monthlyTransactions, totalExpensePlanned, totalExpenseExecuted, totalExpenseRemaining, globalExpensePercentage, totalFaturasCartoes, selectedPeriodKey]);
 
       const filteredTransactions = useMemo(() => {
-        return [...transactions]
-          .sort((a, b) => b.id - a.id)
+        return [...monthlyTransactions]
+          .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime() || b.id - a.id)
           .filter(t => t.comentario.toLowerCase().includes(searchTx.toLowerCase()) || t.origem.toLowerCase().includes(searchTx.toLowerCase()));
-      }, [transactions, searchTx]);
+      }, [monthlyTransactions, searchTx]);
 
-      // ADICIONAR NOVA TRANSAÇÃO VIA MODAL
       const handleCreateTransactionSubmit = async (e) => {
         e.preventDefault();
 
@@ -282,10 +368,10 @@
           };
           setTransactions([newRow, ...transactions]);
           setShowAddTxModal(false);
+          showToast('Lançamento adicionado com sucesso!');
 
-          // Reset formulário
           setNewTxForm({
-            data: new Date().toISOString().split('T')[0],
+            data: `${selectedPeriodKey}-01`,
             origem: 'Dia a Dia',
             classificacao: 'Supermercado',
             conta: 'Conta Talyson',
@@ -297,7 +383,8 @@
             individuo: 'Ambos'
           });
         } else {
-          alert('Erro ao salvar no Supabase: ' + (error?.message || 'Verifique a conexão'));
+          showToast('Erro ao salvar no banco de dados.', 'error');
+          console.error(error);
         }
       };
 
@@ -331,16 +418,34 @@
         await supabase.from('transactions').update(dbPayload).eq('id', id);
       };
 
-      const handleDeleteSingleTx = async (txId) => {
-        setTransactions(prev => prev.filter(t => t.id !== txId));
-        await supabase.from('transactions').delete().eq('id', txId);
+      const handleDeleteSingleTx = (txId) => {
+        setConfirmModal({
+          isOpen: true,
+          title: 'Excluir Lançamento',
+          message: 'Tem certeza que deseja remover este lançamento de forma permanente?',
+          onConfirm: async () => {
+            setTransactions(prev => prev.filter(t => t.id !== txId));
+            await supabase.from('transactions').delete().eq('id', txId);
+            showToast('Lançamento excluído com sucesso.');
+            setConfirmModal({ isOpen: false });
+          }
+        });
       };
 
-      const handleDeleteSelectedTx = async () => {
-        const idsToDelete = [...selectedTxIds];
-        setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
-        setSelectedTxIds([]);
-        await supabase.from('transactions').delete().in('id', idsToDelete);
+      const handleDeleteSelectedTx = () => {
+        setConfirmModal({
+          isOpen: true,
+          title: 'Excluir Múltiplos Lançamentos',
+          message: `Tem certeza que deseja excluir os ${selectedTxIds.length} lançamentos selecionados?`,
+          onConfirm: async () => {
+            const idsToDelete = [...selectedTxIds];
+            setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+            setSelectedTxIds([]);
+            await supabase.from('transactions').delete().in('id', idsToDelete);
+            showToast(`${idsToDelete.length} lançamentos excluídos.`);
+            setConfirmModal({ isOpen: false });
+          }
+        });
       };
 
       const handleAddCardSubmit = async (e) => {
@@ -380,23 +485,69 @@
             cor: 'from-indigo-600 to-purple-800'
           });
           setShowAddCard(false);
+          showToast('Cartão adicionado com sucesso!');
+        } else {
+          showToast('Erro ao salvar o cartão.', 'error');
         }
       };
 
-      const handleDeleteCard = async (cardId) => {
-        if (confirm('Tem certeza que deseja remover este cartão?')) {
-          setCards(prev => prev.filter(c => c.id !== cardId));
-          if (selectedCardForDetails && selectedCardForDetails.id === cardId) {
-            setSelectedCardForDetails(null);
+      const handleDeleteCard = (cardId) => {
+        setConfirmModal({
+          isOpen: true,
+          title: 'Remover Cartão',
+          message: 'Cuidado: Remover o cartão pode afetar os lançamentos já associados a ele. Tem certeza?',
+          onConfirm: async () => {
+            setCards(prev => prev.filter(c => c.id !== cardId));
+            if (selectedCardForDetails && selectedCardForDetails.id === cardId) {
+              setSelectedCardForDetails(null);
+            }
+            await supabase.from('cards').delete().eq('id', cardId);
+            showToast('Cartão removido.');
+            setConfirmModal({ isOpen: false });
           }
-          await supabase.from('cards').delete().eq('id', cardId);
-        }
+        });
       };
 
+      // ATUALIZA ORÇAMENTO PLANEJADO NO MÊS ESPECÍFICO
       const handleUpdateCategoryBudget = async (category, value) => {
         const val = parseFloat(value) || 0;
-        setBudgets(prev => ({ ...prev, [category]: val }));
-        await supabase.from('budgets').upsert({ categoria: category, valor_planejado: val });
+        const periodKey = `${selectedPeriodKey}_${category}`;
+        
+        // Atualiza estritamente o mês específico na interface
+        setBudgets(prev => ({
+          ...prev,
+          [periodKey]: val
+        }));
+
+        try {
+          // 1. Verifica se já existe um orçamento salvo para esta categoria NESTE exato mês
+          const { data: existing } = await supabase
+            .from('budgets')
+            .select('id')
+            .eq('categoria', category)
+            .eq('periodo', selectedPeriodKey)
+            .maybeSingle(); // Retorna o item se existir, ou null se não existir
+
+          if (existing && existing.id) {
+            // 2. Se existe, atualiza apenas o registro deste mês
+            await supabase
+              .from('budgets')
+              .update({ valor_planejado: val })
+              .eq('id', existing.id);
+          } else {
+            // 3. Se não existe, cria um registro exclusivo para este mês
+            await supabase
+              .from('budgets')
+              .insert([{
+                categoria: category,
+                periodo: selectedPeriodKey,
+                valor_planejado: val
+              }]);
+          }
+        } catch (err) {
+          console.error("Erro ao atualizar orçamento:", err);
+          showToast("Falha ao salvar orçamento no banco de dados.", "error");
+        }
       };
 
       const handleSelectTx = (id) => {
@@ -408,9 +559,9 @@
       };
 
       return (
-        <div className="min-h-screen flex flex-col">
-          {/* HEADER */}
-          <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex-1 flex flex-col h-full relative">
+          {/* HEADER COM FILTRO DE MÊS E ANO */}
+          <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur z-30 px-4 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-gradient-to-tr from-indigo-500 via-purple-500 to-emerald-400 rounded-xl shadow-lg shadow-indigo-500/20">
                 <Wallet className="w-6 h-6 text-slate-950 font-bold" />
@@ -424,13 +575,55 @@
               </div>
             </div>
 
+            {/* SELETOR MENSAL GLOBAL */}
+            <div className="flex items-center gap-2 bg-slate-950 border border-indigo-500/30 rounded-xl p-1.5 shadow-inner">
+              <button
+                onClick={handlePrevMonth}
+                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+                title="Mês Anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              
+              <div className="flex items-center gap-2 px-2">
+                <Calendar className="w-4 h-4 text-indigo-400" />
+                <select
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(Number(e.target.value))}
+                  className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+                >
+                  {MONTHS.map((m, idx) => (
+                    <option key={m} value={idx + 1} className="bg-slate-900 text-white">{m}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedYear}
+                  onChange={e => setSelectedYear(Number(e.target.value))}
+                  className="bg-transparent text-xs font-bold text-indigo-300 focus:outline-none cursor-pointer"
+                >
+                  {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => (
+                    <option key={y} value={y} className="bg-slate-900 text-white">{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={handleNextMonth}
+                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+                title="Próximo Mês"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
             <div className="flex items-center gap-4 border-l border-slate-800 pl-4">
               <button 
                 onClick={fetchDatabaseData} 
-                className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+                className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg transition-colors"
                 title="Recarregar do Banco de Dados"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
               </button>
               <div className="text-xs">
                 <span className="text-slate-400 text-[10px] block">Talyson (Conta)</span>
@@ -443,11 +636,12 @@
             </div>
           </header>
 
-          {/* CONTEÚDO PRINCIPAL */}
-          <main className="flex-1 flex flex-col overflow-hidden">
-            <div className="p-6 max-w-[1700px] w-full mx-auto space-y-6 overflow-y-auto">
+          {/* CONTEÚDO PRINCIPAL (Scrollable) */}
+          <main className="flex-1 overflow-y-auto">
+            <div className="p-6 max-w-[1700px] w-full mx-auto space-y-6">
+              
               {/* NAVEGAÇÃO INTERNA */}
-              <div className="flex gap-2 border-b border-slate-800 pb-3">
+              <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3 sticky top-0 bg-slate-950/95 backdrop-blur z-20 pt-2">
                 {[
                   { id: 'painel', label: 'Painel Geral & Histórico', icon: Wallet },
                   { id: 'planejamento', label: 'Planejamento de Gastos', icon: Target },
@@ -457,7 +651,7 @@
                     key={tab.id}
                     onClick={() => setFinanceTab(tab.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      financeTab === tab.id ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                      financeTab === tab.id ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
                     <tab.icon className="w-4 h-4" /> {tab.label}
@@ -465,6 +659,7 @@
                 ))}
               </div>
 
+              {}
               {/* ABA 1: PAINEL GERAL & HISTÓRICO */}
               {financeTab === 'painel' && (
                 <div className="space-y-6">
@@ -472,9 +667,8 @@
                   <div className="bg-slate-900/90 border border-indigo-500/30 rounded-xl overflow-hidden p-2.5 flex items-center gap-3 shadow-lg backdrop-blur">
                     <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 shrink-0">
                       <Megaphone className="w-4 h-4 text-indigo-400 animate-pulse" />
-                      <span className="whitespace-nowrap uppercase tracking-wider text-[11px]">Resumo do Planejamento</span>
+                      <span className="whitespace-nowrap uppercase tracking-wider text-[11px]">Resumo ({MONTHS[selectedMonth - 1]}/{selectedYear})</span>
                     </div>
-
                     <div className="overflow-hidden w-full relative">
                       <div className="animate-marquee flex items-center gap-8 text-xs font-mono">
                         {[...tickerItems, ...tickerItems].map((item, idx) => (
@@ -490,42 +684,59 @@
                   </div>
 
                   {/* CARDS DE SALDO */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Talyson</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-indigo-500/50 transition-colors">
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Talyson (Total)</p>
                       <h3 className="text-2xl font-bold text-white mt-1">R$ {talysonBalance.toFixed(2)}</h3>
                       <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
                     </div>
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Karla</p>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-purple-500/50 transition-colors">
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Conta Karla (Total)</p>
                       <h3 className="text-2xl font-bold text-white mt-1">R$ {karlaBalance.toFixed(2)}</h3>
                       <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
                     </div>
-                    <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-5">
-                      <p className="text-xs text-indigo-300 font-semibold uppercase">Saldo Consolidado (Contas)</p>
-                      <h3 className="text-3xl font-extrabold text-white mt-1">R$ {consolidatedBalance.toFixed(2)}</h3>
-                      <p className="text-[10px] text-indigo-300/70 mt-1">Disponível em Dinheiro/Pix</p>
+                    <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-5 relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <p className="text-xs text-indigo-300 font-semibold uppercase relative z-10">Saldo Consolidado</p>
+                      <h3 className="text-3xl font-extrabold text-white mt-1 relative z-10">R$ {consolidatedBalance.toFixed(2)}</h3>
+                      <p className="text-[10px] text-indigo-300/70 mt-1 relative z-10">Disponível em Dinheiro/Pix</p>
                     </div>
-                    <div className="bg-slate-900 border border-purple-500/30 rounded-xl p-5">
-                      <p className="text-xs text-purple-400 font-semibold uppercase">Total Faturas Cartões</p>
+                    <div className="bg-slate-900 border border-purple-500/30 rounded-xl p-5 hover:border-purple-400/60 transition-colors">
+                      <p className="text-xs text-purple-400 font-semibold uppercase">Faturas ({MONTHS[selectedMonth - 1]})</p>
                       <h3 className="text-2xl font-bold text-purple-300 mt-1">R$ {totalFaturasCartoes.toFixed(2)}</h3>
-                      <p className="text-[10px] text-slate-500 mt-1">Acumulado em Cartões de Crédito</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Gasto em Crédito no Mês</p>
                     </div>
                   </div>
 
+                  {}
                   {/* TABELA PLANILHA HISTÓRICO */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-                    <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl flex flex-col h-[600px]">
+                    <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 shrink-0 bg-slate-900/95">
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-bold">Histórico de Lançamentos</span>
+                        <span className="text-sm font-bold flex items-center gap-2">
+                          Histórico de Lançamentos
+                          <span className="text-xs font-normal text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                            {MONTHS[selectedMonth - 1]} / {selectedYear} ({filteredTransactions.length})
+                          </span>
+                        </span>
                         <button
                           onClick={() => setSpreadsheetMode(!spreadsheetMode)}
-                          className="text-xs bg-slate-950 border border-slate-800 px-3 py-1 rounded text-indigo-400 font-semibold"
+                          className={`text-xs border px-3 py-1 rounded font-semibold transition-colors flex items-center gap-1
+                            ${spreadsheetMode ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-indigo-400 hover:bg-slate-800'}`}
                         >
-                          {spreadsheetMode ? 'Modo Edição Direta' : 'Modo Leitura'}
+                          <Edit3 className="w-3 h-3" />
+                          {spreadsheetMode ? 'Modo Edição Direta (ON)' : 'Ativar Edição Direta'}
                         </button>
                       </div>
-                      <div className="flex items-center gap-2">
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="text"
+                          placeholder="Buscar no mês..."
+                          value={searchTx}
+                          onChange={e => setSearchTx(e.target.value)}
+                          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 min-w-[200px]"
+                        />
                         <button
                           onClick={() => setShowAddTxModal(true)}
                           className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
@@ -533,462 +744,132 @@
                           <Plus className="w-4 h-4" /> Novo Lançamento
                         </button>
                         {selectedTxIds.length > 0 && (
-                          <button onClick={handleDeleteSelectedTx} className="flex items-center gap-1 bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">
+                          <button onClick={handleDeleteSelectedTx} className="flex items-center gap-1 bg-rose-600/90 hover:bg-rose-500 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors">
                             <Trash2 className="w-4 h-4" /> Excluir ({selectedTxIds.length})
                           </button>
                         )}
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                    {}
+                    <div className="overflow-x-auto flex-1 overflow-y-auto">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 sticky top-0 z-10">
                           <tr>
-                            <th className="p-3 w-8"><input type="checkbox" onChange={handleSelectAllTx} /></th>
+                            <th className="p-3 w-10 text-center"><input type="checkbox" className="accent-indigo-500 cursor-pointer w-3.5 h-3.5 rounded" onChange={handleSelectAllTx} checked={selectedTxIds.length === filteredTransactions.length && filteredTransactions.length > 0} /></th>
                             <th className="p-3 min-w-[130px]">1. Data</th>
                             <th className="p-3 min-w-[160px]">2. Origem/Destino</th>
                             <th className="p-3 min-w-[170px]">3. Classificação</th>
-                            <th className="p-3 min-w-[140px]">4. Conta Bancária</th>
-                            <th className="p-3 min-w-[110px]">5. Operação</th>
-                            <th className="p-3 min-w-[160px]">6. Cartão (se Crédito)</th>
-                            <th className="p-3 min-w-[120px] text-right">7. Entrada</th>
-                            <th className="p-3 min-w-[120px] text-right">8. Saída</th>
+                            <th className="p-3 min-w-[140px]">4. Conta</th>
+                            <th className="p-3 min-w-[120px]">5. Operação</th>
+                            <th className="p-3 min-w-[160px]">6. Cartão</th>
+                            <th className="p-3 min-w-[120px] text-right">7. Entrada (R$)</th>
+                            <th className="p-3 min-w-[120px] text-right">8. Saída (R$)</th>
                             <th className="p-3 min-w-[200px]">9. Comentário</th>
                             <th className="p-3 min-w-[120px]">10. Indivíduo</th>
+                            <th className="p-3 w-12 text-center">Ações</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
-                          {filteredTransactions.map(tx => (
-                            <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
-                              <td className="p-3">
-                                <input type="checkbox" checked={selectedTxIds.includes(tx.id)} onChange={() => handleSelectTx(tx.id)} />
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <input
-                                    type="date"
-                                    value={tx.data}
-                                    onChange={e => handleUpdateTx(tx.id, 'data', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
-                                  />
-                                ) : tx.data}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <select
-                                    value={tx.origem}
-                                    onChange={e => handleUpdateTx(tx.id, 'origem', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 font-medium focus:outline-none focus:border-indigo-500 w-full"
-                                  >
-                                    {Object.keys(CATEGORIES_MAP).map(cat => (
-                                      <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                  </select>
-                                ) : <span className="font-medium text-indigo-300">{tx.origem}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <select
-                                    value={tx.classificacao}
-                                    onChange={e => handleUpdateTx(tx.id, 'classificacao', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none focus:border-indigo-500 w-full"
-                                  >
-                                    {(CATEGORIES_MAP[tx.origem] || []).map(sub => (
-                                      <option key={sub} value={sub}>{sub}</option>
-                                    ))}
-                                  </select>
-                                ) : <span className="text-purple-300">{tx.classificacao}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <select
-                                    value={tx.conta}
-                                    onChange={e => handleUpdateTx(tx.id, 'conta', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
-                                  >
-                                    <option value="Conta Talyson">Conta Talyson</option>
-                                    <option value="Conta Karla">Conta Karla</option>
-                                  </select>
-                                ) : <span className="text-slate-300">{tx.conta}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <select
-                                    value={tx.operacao}
-                                    onChange={e => handleUpdateTx(tx.id, 'operacao', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-teal-300 font-semibold focus:outline-none focus:border-indigo-500 w-full"
-                                  >
-                                    <option value="Pix">Pix</option>
-                                    <option value="Dinheiro">Dinheiro</option>
-                                    <option value="Crédito">Crédito</option>
-                                  </select>
-                                ) : <span className={`font-semibold ${tx.operacao === 'Crédito' ? 'text-purple-400' : 'text-teal-300'}`}>{tx.operacao}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {tx.operacao === 'Crédito' ? (
-                                  spreadsheetMode ? (
-                                    <select
-                                      value={tx.cartaoId || ''}
-                                      onChange={e => handleUpdateTx(tx.id, 'cartaoId', e.target.value)}
-                                      className="bg-slate-950 border border-purple-500/50 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none w-full"
-                                    >
-                                      <option value="">Selecione...</option>
-                                      {cards.map(c => (
-                                        <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span className="text-purple-300 font-medium">
-                                      {cards.find(c => Number(c.id) === Number(tx.cartaoId))?.nome || 'Cartão N/D'}
-                                    </span>
-                                  )
-                                ) : (
-                                  <span className="text-slate-600 font-mono text-[11px]">- N/A -</span>
-                                )}
-                              </td>
-
-                              <td className="p-3 text-right">
-                                {spreadsheetMode ? (
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={tx.entrada}
-                                    onChange={e => handleUpdateTx(tx.id, 'entrada', parseFloat(e.target.value) || 0)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-emerald-400 font-mono text-right w-24 focus:outline-none focus:border-emerald-500"
-                                  />
-                                ) : <span className="font-mono text-emerald-400">R$ {Number(tx.entrada).toFixed(2)}</span>}
-                              </td>
-
-                              <td className="p-3 text-right">
-                                {spreadsheetMode ? (
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={tx.saída}
-                                    onChange={e => handleUpdateTx(tx.id, 'saída', parseFloat(e.target.value) || 0)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-rose-400 font-mono text-right w-24 focus:outline-none focus:border-rose-500"
-                                  />
-                                ) : <span className="font-mono text-rose-400">R$ {Number(tx.saída).toFixed(2)}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <input
-                                    type="text"
-                                    value={tx.comentario}
-                                    onChange={e => handleUpdateTx(tx.id, 'comentario', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-full focus:outline-none focus:border-indigo-500"
-                                  />
-                                ) : <span className="text-slate-300">{tx.comentario}</span>}
-                              </td>
-
-                              <td className="p-3">
-                                {spreadsheetMode ? (
-                                  <select
-                                    value={tx.individuo}
-                                    onChange={e => handleUpdateTx(tx.id, 'individuo', e.target.value)}
-                                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300 focus:outline-none focus:border-indigo-500 w-full"
-                                  >
-                                    <option value="Talyson">Talyson</option>
-                                    <option value="Karla">Karla</option>
-                                    <option value="Ambos">Ambos</option>
-                                  </select>
-                                ) : <span className="text-amber-300 font-medium">{tx.individuo}</span>}
+                          {filteredTransactions.length === 0 ? (
+                            <tr>
+                              <td colSpan="12" className="p-8 text-center text-slate-500">
+                                <div className="flex flex-col items-center justify-center gap-2">
+                                  <Info className="w-8 h-8 text-slate-600" />
+                                  <p>Nenhum lançamento encontrado para este período.</p>
+                                </div>
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* MODAL / POP-UP NOVO LANÇAMENTO */}
-              {showAddTxModal && (
-                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                    <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">
-                          <Plus className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-bold text-white">Novo Lançamento</h3>
-                          <p className="text-xs text-slate-400">Preencha os campos para registrar a movimentação</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setShowAddTxModal(false)}
-                        className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleCreateTransactionSubmit} className="p-6 space-y-4 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">1. Data</label>
-                          <input
-                            type="date"
-                            required
-                            value={newTxForm.data}
-                            onChange={e => setNewTxForm({ ...newTxForm, data: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">2. Origem / Categoria</label>
-                          <select
-                            value={newTxForm.origem}
-                            onChange={e => {
-                              const newOrigem = e.target.value;
-                              setNewTxForm({
-                                ...newTxForm,
-                                origem: newOrigem,
-                                classificacao: CATEGORIES_MAP[newOrigem] ? CATEGORIES_MAP[newOrigem][0] : ''
-                              });
-                            }}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-indigo-300 font-medium focus:outline-none focus:border-indigo-500"
-                          >
-                            {Object.keys(CATEGORIES_MAP).map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">3. Classificação</label>
-                          <select
-                            value={newTxForm.classificacao}
-                            onChange={e => setNewTxForm({ ...newTxForm, classificacao: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-purple-300 focus:outline-none focus:border-indigo-500"
-                          >
-                            {(CATEGORIES_MAP[newTxForm.origem] || []).map(sub => (
-                              <option key={sub} value={sub}>{sub}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">4. Conta Bancária</label>
-                          <select
-                            value={newTxForm.conta}
-                            onChange={e => setNewTxForm({ ...newTxForm, conta: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="Conta Talyson">Conta Talyson</option>
-                            <option value="Conta Karla">Conta Karla</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">5. Operação</label>
-                          <select
-                            value={newTxForm.operacao}
-                            onChange={e => {
-                              const op = e.target.value;
-                              setNewTxForm({
-                                ...newTxForm,
-                                operacao: op,
-                                cartaoId: op === 'Crédito' && cards.length > 0 ? (newTxForm.cartaoId || cards[0].id) : ''
-                              });
-                            }}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-teal-300 font-semibold focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="Pix">Pix</option>
-                            <option value="Dinheiro">Dinheiro</option>
-                            <option value="Crédito">Crédito</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">6. Cartão de Crédito</label>
-                          <select
-                            disabled={newTxForm.operacao !== 'Crédito'}
-                            value={newTxForm.cartaoId}
-                            onChange={e => setNewTxForm({ ...newTxForm, cartaoId: e.target.value })}
-                            className={`w-full bg-slate-950 border rounded-lg p-2.5 text-purple-300 focus:outline-none ${
-                              newTxForm.operacao === 'Crédito' ? 'border-purple-500/50' : 'border-slate-800 opacity-50 cursor-not-allowed'
-                            }`}
-                          >
-                            <option value="">Selecione um Cartão...</option>
-                            {cards.map(c => (
-                              <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">7. Valor Entrada (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={newTxForm.entrada}
-                            onChange={e => setNewTxForm({ ...newTxForm, entrada: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">8. Valor Saída (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={newTxForm.saida}
-                            onChange={e => setNewTxForm({ ...newTxForm, saida: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-rose-400 font-mono focus:outline-none focus:border-rose-500"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <label className="block text-slate-400 mb-1 font-medium">9. Comentário / Descrição</label>
-                          <input
-                            type="text"
-                            placeholder="Ex: Mercado semanal"
-                            value={newTxForm.comentario}
-                            onChange={e => setNewTxForm({ ...newTxForm, comentario: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <label className="block text-slate-400 mb-1 font-medium">10. Indivíduo Responsável</label>
-                          <select
-                            value={newTxForm.individuo}
-                            onChange={e => setNewTxForm({ ...newTxForm, individuo: e.target.value })}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-amber-300 font-medium focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="Talyson">Talyson</option>
-                            <option value="Karla">Karla</option>
-                            <option value="Ambos">Ambos</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => setShowAddTxModal(false)}
-                          className="px-4 py-2.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="submit"
-                          className="px-5 py-2.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all"
-                        >
-                          Salvar Lançamento
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
-
-              {/* ABA 2: PLANEJAMENTO DE GASTOS */}
-              {financeTab === 'planejamento' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <span className="text-xs text-slate-400 font-medium uppercase">Orçamento Total Planejado</span>
-                      <h3 className="text-2xl font-bold text-indigo-400 font-mono mt-1">R$ {totalExpensePlanned.toFixed(2)}</h3>
-                    </div>
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <span className="text-xs text-slate-400 font-medium uppercase">Total Executado (Gasto Real)</span>
-                      <h3 className="text-2xl font-bold text-amber-400 font-mono mt-1">R$ {totalExpenseExecuted.toFixed(2)}</h3>
-                    </div>
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <span className="text-xs text-slate-400 font-medium uppercase">Saldo Orçamentário Restante</span>
-                      <h3 className={`text-2xl font-bold font-mono mt-1 ${totalExpenseRemaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>R$ {totalExpenseRemaining.toFixed(2)}</h3>
-                    </div>
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-400 font-medium uppercase">Comprometimento Global</span>
-                        <span className="text-xs font-bold font-mono text-indigo-400">{globalExpensePercentage.toFixed(1)}%</span>
-                      </div>
-                      <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden mt-3 border border-slate-800">
-                        <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${Math.min(globalExpensePercentage, 100)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-                    <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Target className="w-4 h-4 text-indigo-400" />
-                        Planejamento por Origem / Destino
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
-                          <tr>
-                            <th className="p-3 min-w-[180px]">Categoria</th>
-                            <th className="p-3 min-w-[150px] text-right">Planejado (Meta R$)</th>
-                            <th className="p-3 min-w-[140px] text-right">Executado (Saídas R$)</th>
-                            <th className="p-3 min-w-[140px] text-right">Saldo Restante (R$)</th>
-                            <th className="p-3 min-w-[180px]">Comprometimento %</th>
-                            <th className="p-3 min-w-[120px] text-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800">
-                          {expenseCategories.map(cat => {
-                            const planned = budgets[cat] || 0;
-                            const executed = transactions.filter(t => t.origem === cat).reduce((acc, t) => acc + (Number(t.saída) || 0), 0);
-                            const diff = planned - executed;
-                            const pct = planned > 0 ? (executed / planned) * 100 : 0;
-                            const isOverBudget = executed > planned && planned > 0;
-
-                            return (
-                              <tr key={cat} className="hover:bg-slate-800/40 transition-colors">
-                                <td className="p-3 font-semibold text-indigo-300">{cat}</td>
-                                <td className="p-3 text-right">
-                                  {editingCategory === cat ? (
-                                    <input
-                                      type="number"
-                                      step="50"
-                                      value={planned}
-                                      onChange={e => handleUpdateCategoryBudget(cat, e.target.value)}
-                                      onBlur={() => setEditingCategory(null)}
-                                      autoFocus
-                                      className="bg-slate-950 border border-indigo-500 rounded px-2 py-1 text-xs text-indigo-300 font-mono text-right w-28 focus:outline-none"
-                                    />
-                                  ) : (
-                                    <button onClick={() => setEditingCategory(cat)} className="font-mono text-indigo-300 hover:text-indigo-200 flex items-center justify-end gap-1.5 ml-auto group">
-                                      <span>R$ {planned.toFixed(2)}</span>
-                                      <Edit3 className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="p-3 text-right font-mono text-amber-400 font-medium">R$ {executed.toFixed(2)}</td>
-                                <td className={`p-3 text-right font-mono font-bold ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>R$ {diff.toFixed(2)}</td>
-                                <td className="p-3">
-                                  <span className="font-mono text-[11px] text-slate-300 font-medium block mb-1">{pct.toFixed(1)}%</span>
-                                  <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
-                                    <div className={`h-full transition-all duration-500 ${pct > 100 ? 'bg-rose-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                                  </div>
-                                </td>
+                          ) : (
+                            filteredTransactions.map(tx => (
+                              <tr key={tx.id} className={`hover:bg-slate-800/50 transition-colors ${selectedTxIds.includes(tx.id) ? 'bg-indigo-900/10' : ''}`}>
                                 <td className="p-3 text-center">
-                                  {isOverBudget ? (
-                                    <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded text-[10px] font-bold"><AlertTriangle className="w-3 h-3" /> Excedido</span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[10px] font-bold"><CheckCircle2 className="w-3 h-3" /> OK</span>
-                                  )}
+                                  <input type="checkbox" className="accent-indigo-500 cursor-pointer w-3.5 h-3.5 rounded" checked={selectedTxIds.includes(tx.id)} onChange={() => handleSelectTx(tx.id)} />
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <input type="date" value={tx.data} onChange={e => handleUpdateTx(tx.id, 'data', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none" />
+                                  ) : <span className="font-mono">{tx.data.split('-').reverse().join('/')}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <select value={tx.origem} onChange={e => handleUpdateTx(tx.id, 'origem', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      {Object.keys(CATEGORIES_MAP).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                    </select>
+                                  ) : <span className="font-semibold text-slate-300">{tx.origem}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <select value={tx.classificacao} onChange={e => handleUpdateTx(tx.id, 'classificacao', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      {(CATEGORIES_MAP[tx.origem] || []).map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                                    </select>
+                                  ) : <span className="text-slate-400">{tx.classificacao}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <select value={tx.conta} onChange={e => handleUpdateTx(tx.id, 'conta', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      {['Conta Talyson', 'Conta Karla', 'Ambos', 'Outro'].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  ) : tx.conta}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <select value={tx.operacao} onChange={e => handleUpdateTx(tx.id, 'operacao', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      {['Pix', 'Débito', 'Crédito', 'Dinheiro', 'Transferência'].map(o => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                  ) : <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${tx.operacao === 'Crédito' ? 'bg-purple-500/20 text-purple-400' : tx.operacao === 'Pix' ? 'bg-teal-500/20 text-teal-400' : 'bg-slate-800 text-slate-400'}`}>{tx.operacao}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {(spreadsheetMode && tx.operacao === 'Crédito') ? (
+                                    <select value={tx.cartaoId || ''} onChange={e => handleUpdateTx(tx.id, 'cartaoId', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      <option value="">Selecione...</option>
+                                      {cards.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                                    </select>
+                                  ) : tx.operacao === 'Crédito' ? (
+                                    <span className="text-purple-300">{cards.find(c => c.id == tx.cartaoId)?.nome || 'Não definido'}</span>
+                                  ) : <span className="text-slate-600">-</span>}
+                                </td>
+                                
+                                <td className="p-2 text-right">
+                                  {spreadsheetMode ? (
+                                    <input type="number" step="0.01" value={tx.entrada} onChange={e => handleUpdateTx(tx.id, 'entrada', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white text-right focus:border-indigo-500 focus:outline-none" />
+                                  ) : <span className={tx.entrada > 0 ? 'text-emerald-400 font-semibold' : 'text-slate-600'}>{tx.entrada > 0 ? `+ ${tx.entrada.toFixed(2)}` : '-'}</span>}
+                                </td>
+                                
+                                <td className="p-2 text-right">
+                                  {spreadsheetMode ? (
+                                    <input type="number" step="0.01" value={tx.saída} onChange={e => handleUpdateTx(tx.id, 'saída', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white text-right focus:border-indigo-500 focus:outline-none" />
+                                  ) : <span className={tx.saída > 0 ? 'text-rose-400 font-semibold' : 'text-slate-600'}>{tx.saída > 0 ? `- ${tx.saída.toFixed(2)}` : '-'}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <input type="text" value={tx.comentario || ''} onChange={e => handleUpdateTx(tx.id, 'comentario', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none" />
+                                  ) : <span className="truncate max-w-[200px] block" title={tx.comentario}>{tx.comentario}</span>}
+                                </td>
+                                
+                                <td className="p-2">
+                                  {spreadsheetMode ? (
+                                    <select value={tx.individuo} onChange={e => handleUpdateTx(tx.id, 'individuo', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 w-full text-white focus:border-indigo-500 focus:outline-none">
+                                      {['Talyson', 'Karla', 'Ambos', 'Outro'].map(i => <option key={i} value={i}>{i}</option>)}
+                                    </select>
+                                  ) : tx.individuo}
+                                </td>
+
+                                <td className="p-2 text-center">
+                                  <button onClick={() => handleDeleteSingleTx(tx.id)} className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </td>
                               </tr>
-                            );
-                          })}
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -996,393 +877,387 @@
                 </div>
               )}
 
+              {}
+              {/* ABA 2: PLANEJAMENTO DE GASTOS */}
+              {financeTab === 'planejamento' && (
+                <div className="space-y-6 animate-fade-in">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+                      <div>
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                          <Target className="w-5 h-5 text-indigo-400" /> Metas de Gastos
+                        </h2>
+                        <p className="text-xs text-slate-400 mt-1">Configure o limite mensal para cada categoria. Atual: {MONTHS[selectedMonth - 1]}/{selectedYear}</p>
+                      </div>
+                      <div className="flex gap-4">
+                        <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center min-w-[120px]">
+                          <p className="text-[10px] uppercase font-semibold text-slate-500">Total Planejado</p>
+                          <p className="font-bold text-lg text-indigo-300">R$ {totalExpensePlanned.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center min-w-[120px]">
+                          <p className="text-[10px] uppercase font-semibold text-slate-500">Gasto Atual</p>
+                          <p className="font-bold text-lg text-amber-400">R$ {totalExpenseExecuted.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {expenseCategories.map(cat => {
+                        const planned = getCategoryBudget(cat);
+                        const executed = monthlyTransactions.filter(t => t.origem === cat).reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+                        const progress = planned > 0 ? Math.min((executed / planned) * 100, 100) : 0;
+                        const isOver = executed > planned && planned > 0;
+
+                        return (
+                          <div key={cat} className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden group">
+                            <div className="flex justify-between items-start mb-1">
+                              <div>
+                                <h4 className="font-bold text-slate-200 text-sm">{cat}</h4>
+                                <span className="text-[10px] text-slate-500">{(CATEGORIES_MAP[cat]||[]).slice(0,3).join(', ')}...</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <label className="text-[10px] text-slate-500 mb-1">Meta (R$)</label>
+                                <input 
+                                  type="number" 
+                                  step="10"
+                                  className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-right text-indigo-300 focus:border-indigo-500 focus:outline-none transition-colors"
+                                  value={planned}
+                                  onChange={(e) => handleUpdateCategoryBudget(cat, e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="mt-auto space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-400">Gasto: <span className="text-slate-200 font-semibold">R$ {executed.toFixed(2)}</span></span>
+                                <span className={isOver ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+                                  {planned > 0 ? `${((executed / planned) * 100).toFixed(0)}%` : '0%'}
+                                </span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${isOver ? 'bg-rose-500' : progress > 80 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                                  style={{ width: `${progress}%` }}
+                                ></div>
+                              </div>
+                              {isOver && <p className="text-[10px] text-rose-400 flex items-center gap-1 mt-1"><AlertTriangle className="w-3 h-3"/> Orçamento excedido</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {}
               {/* ABA 3: CARTÕES DE CRÉDITO */}
               {financeTab === 'cartoes' && (
-                <div className="space-y-6">
-                  <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                <div className="space-y-6 animate-fade-in">
+                  <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-md">
                     <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        <CreditCard className="w-5 h-5 text-indigo-400" />
-                        Gestão de Cartões de Crédito
-                      </h3>
-                      <p className="text-xs text-slate-400">Cadastre e gerencie cartões e sincronize faturas diretamente no banco de dados.</p>
+                      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-purple-400" /> Meus Cartões
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-1">Gerencie limites e acompanhe faturas.</p>
                     </div>
                     <button
-                      onClick={() => setShowAddCard(!showAddCard)}
-                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg transition-all"
+                      onClick={() => setShowAddCard(true)}
+                      className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg shadow-purple-600/30 transition-all"
                     >
-                      {showAddCard ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                      {showAddCard ? 'Cancelar' : 'Adicionar Cartão'}
+                      <Plus className="w-4 h-4" /> Adicionar Cartão
                     </button>
                   </div>
 
-                  {/* FORMULÁRIO DE ADICIONAR CARTÃO */}
-                  {showAddCard && (
-                    <form onSubmit={handleAddCardSubmit} className="bg-slate-900 border border-indigo-500/30 p-5 rounded-xl shadow-xl space-y-4">
-                      <h4 className="text-sm font-bold text-indigo-300 border-b border-slate-800 pb-2">Cadastrar Novo Cartão de Crédito</h4>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Nome do Cartão</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Ex: Itaú Personnalité"
-                            value={newCard.nome}
-                            onChange={e => setNewCard({...newCard, nome: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Titular</label>
-                          <select
-                            value={newCard.titular}
-                            onChange={e => setNewCard({...newCard, titular: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="Talyson">Talyson</option>
-                            <option value="Karla">Karla</option>
-                            <option value="Ambos">Ambos</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Limite Total (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            required
-                            placeholder="10000.00"
-                            value={newCard.limite}
-                            onChange={e => setNewCard({...newCard, limite: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500 font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Fatura Base Inicial (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={newCard.faturaAtual}
-                            onChange={e => setNewCard({...newCard, faturaAtual: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500 font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Dia de Fechamento</label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="31"
-                            required
-                            placeholder="Ex: 15"
-                            value={newCard.diaFechamento}
-                            onChange={e => setNewCard({...newCard, diaFechamento: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-400 mb-1 font-medium">Dia de Vencimento</label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="31"
-                            required
-                            placeholder="Ex: 25"
-                            value={newCard.diaVencimento}
-                            onChange={e => setNewCard({...newCard, diaVencimento: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2 lg:col-span-3">
-                          <label className="block text-slate-400 mb-1 font-medium">Estilo do Cartão (Gradiente)</label>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-                            {GRADIENTS.map(g => (
-                              <button
-                                type="button"
-                                key={g.value}
-                                onClick={() => setNewCard({...newCard, cor: g.value})}
-                                className={`p-2 rounded-lg text-[10px] font-semibold text-white bg-gradient-to-r ${g.value} border-2 transition-all ${
-                                  newCard.cor === g.value ? 'border-white scale-105 shadow-md' : 'border-transparent opacity-70 hover:opacity-100'
-                                }`}
-                              >
-                                {g.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => setShowAddCard(false)}
-                          className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="submit"
-                          className="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white"
-                        >
-                          Salvar Cartão
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* GRID DOS CARTÕES */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {cards.map(card => {
-                      const totalFatura = getCardInvoice(card.id, card.faturaAtual);
-                      const limiteDisponivel = card.limite - totalFatura;
-                      const pctUso = card.limite > 0 ? (totalFatura / card.limite) * 100 : 0;
-
-                      return (
-                        <div key={card.id} className={`bg-gradient-to-br ${card.cor} rounded-2xl p-6 text-white shadow-xl space-y-5 relative overflow-hidden flex flex-col justify-between`}>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <span className="text-[10px] font-bold tracking-wider uppercase opacity-80 bg-black/20 px-2 py-0.5 rounded-full backdrop-blur">
-                                {card.titular}
-                              </span>
-                              <h4 className="text-xl font-extrabold mt-1">{card.nome}</h4>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <CreditCard className="w-6 h-6 opacity-80" />
-                              <button
-                                onClick={() => handleDeleteCard(card.id)}
-                                className="opacity-60 hover:opacity-100 transition-opacity p-1 bg-black/20 rounded hover:bg-rose-600/50"
-                                title="Excluir Cartão"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="bg-black/20 backdrop-blur rounded-xl p-3 flex justify-between items-center">
-                            <div>
-                              <span className="text-[11px] opacity-80 block">Fatura Atual (Total)</span>
-                              <p className="text-2xl font-black font-mono">R$ {totalFatura.toFixed(2)}</p>
-                            </div>
-                            <button
-                              onClick={() => setSelectedCardForDetails(card)}
-                              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur transition-all"
-                            >
-                              <Eye className="w-3.5 h-3.5" /> Ver Movimentações
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs bg-black/10 rounded-xl p-2.5">
-                            <div className="flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                              <div>
-                                <span className="block text-[10px] opacity-75">Fechamento</span>
-                                <span className="font-bold">Dia {card.diaFechamento}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                              <div>
-                                <span className="block text-[10px] opacity-75">Vencimento</span>
-                                <span className="font-bold">Dia {card.diaVencimento}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1 text-xs">
-                            <div className="flex justify-between opacity-90 font-mono text-[11px]">
-                              <span>Disponível: R$ {limiteDisponivel.toFixed(2)}</span>
-                              <span>Limite: R$ {Number(card.limite).toFixed(2)}</span>
-                            </div>
-                            <div className="w-full bg-black/30 h-2 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full transition-all duration-500 ${
-                                  pctUso > 90 ? 'bg-rose-400' : pctUso > 70 ? 'bg-amber-300' : 'bg-emerald-300'
-                                }`}
-                                style={{ width: `${Math.min(pctUso, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* MODAL DE DETALHAMENTO DO CARTÃO */}
-                  {selectedCardForDetails && (
-                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-                        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-                              Fatura Detalhada
-                            </span>
-                            <h3 className="text-xl font-bold text-white mt-1">
-                              {selectedCardForDetails.nome} ({selectedCardForDetails.titular})
-                            </h3>
-                          </div>
-                          <button
-                            onClick={() => setSelectedCardForDetails(null)}
-                            className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-                          >
-                            <X className="w-5 h-5" />
-                          </button>
-                        </div>
-
-                        <div className="p-5 bg-slate-900/50 border-b border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                            <span className="text-[10px] text-slate-400 uppercase font-semibold">Total da Fatura</span>
-                            <p className="text-xl font-bold text-purple-300 font-mono mt-0.5">
-                              R$ {getCardInvoice(selectedCardForDetails.id, selectedCardForDetails.faturaAtual).toFixed(2)}
-                            </p>
-                          </div>
-                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                            <span className="text-[10px] text-slate-400 uppercase font-semibold">Vencimento / Fechamento</span>
-                            <p className="text-sm font-bold text-slate-200 mt-1">
-                              Dia {selectedCardForDetails.diaVencimento} <span className="text-slate-500 font-normal">(Fecha dia {selectedCardForDetails.diaFechamento})</span>
-                            </p>
-                          </div>
-                          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-                            <div>
-                              <span className="text-[10px] text-slate-400 uppercase font-semibold">Movimentações</span>
-                              <p className="text-xl font-bold text-white font-mono mt-0.5">
-                                {transactions.filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id)).length}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setNewTxForm(prev => ({
-                                  ...prev,
-                                  operacao: 'Crédito',
-                                  cartaoId: selectedCardForDetails.id
-                                }));
-                                setShowAddTxModal(true);
-                              }}
-                              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            >
-                              <Plus className="w-4 h-4" /> Nova Compra
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="p-5 overflow-y-auto flex-1">
-                          {transactions.filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id)).length === 0 ? (
-                            <div className="text-center py-12 text-slate-500 text-xs">
-                              Nenhuma movimentação lançada para este cartão.
-                            </div>
-                          ) : (
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 sticky top-0">
-                                <tr>
-                                  <th className="p-3 min-w-[130px]">Data</th>
-                                  <th className="p-3 min-w-[150px]">Origem</th>
-                                  <th className="p-3 min-w-[150px]">Classificação</th>
-                                  <th className="p-3 min-w-[110px] text-right">Valor (R$)</th>
-                                  <th className="p-3 min-w-[180px]">Comentário</th>
-                                  <th className="p-3 min-w-[110px]">Indivíduo</th>
-                                  <th className="p-3 w-12 text-center">Ação</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-800">
-                                {transactions
-                                  .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(selectedCardForDetails.id))
-                                  .map(tx => (
-                                    <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
-                                      <td className="p-3">
-                                        <input
-                                          type="date"
-                                          value={tx.data}
-                                          onChange={e => handleUpdateTx(tx.id, 'data', e.target.value)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full"
-                                        />
-                                      </td>
-                                      <td className="p-3">
-                                        <select
-                                          value={tx.origem}
-                                          onChange={e => handleUpdateTx(tx.id, 'origem', e.target.value)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 font-medium focus:outline-none focus:border-indigo-500 w-full"
-                                        >
-                                          {Object.keys(CATEGORIES_MAP).map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td className="p-3">
-                                        <select
-                                          value={tx.classificacao}
-                                          onChange={e => handleUpdateTx(tx.id, 'classificacao', e.target.value)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-purple-300 focus:outline-none focus:border-indigo-500 w-full"
-                                        >
-                                          {(CATEGORIES_MAP[tx.origem] || []).map(sub => (
-                                            <option key={sub} value={sub}>{sub}</option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td className="p-3 text-right">
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          value={tx.saída}
-                                          onChange={e => handleUpdateTx(tx.id, 'saída', parseFloat(e.target.value) || 0)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-rose-400 font-mono text-right w-24 focus:outline-none focus:border-rose-500"
-                                        />
-                                      </td>
-                                      <td className="p-3">
-                                        <input
-                                          type="text"
-                                          value={tx.comentario}
-                                          onChange={e => handleUpdateTx(tx.id, 'comentario', e.target.value)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-full focus:outline-none focus:border-indigo-500"
-                                        />
-                                      </td>
-                                      <td className="p-3">
-                                        <select
-                                          value={tx.individuo}
-                                          onChange={e => handleUpdateTx(tx.id, 'individuo', e.target.value)}
-                                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300 focus:outline-none focus:border-indigo-500 w-full"
-                                        >
-                                          <option value="Talyson">Talyson</option>
-                                          <option value="Karla">Karla</option>
-                                          <option value="Ambos">Ambos</option>
-                                        </select>
-                                      </td>
-                                      <td className="p-3 text-center">
-                                        <button
-                                          onClick={() => handleDeleteSingleTx(tx.id)}
-                                          className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded transition-colors"
-                                          title="Excluir movimentação"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-
-                        <div className="p-4 border-t border-slate-800 bg-slate-950 flex justify-end">
-                          <button
-                            onClick={() => setSelectedCardForDetails(null)}
-                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition-colors"
-                          >
-                            Fechar Detalhes
-                          </button>
-                        </div>
+                    {cards.length === 0 ? (
+                      <div className="col-span-full p-12 text-center text-slate-500 bg-slate-900 border border-slate-800 border-dashed rounded-xl">
+                        <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p>Nenhum cartão cadastrado ainda.</p>
+                        <button onClick={() => setShowAddCard(true)} className="mt-4 text-purple-400 hover:text-purple-300 text-sm font-semibold underline">Cadastrar primeiro cartão</button>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      cards.map(card => {
+                        const faturaMes = getCardInvoice(card.id, card.faturaAtual);
+                        const limiteDisponivel = card.limite - faturaMes;
+                        const progress = card.limite > 0 ? Math.min((faturaMes / card.limite) * 100, 100) : 0;
+
+                        return (
+                          <div key={card.id} className="relative group perspective-1000">
+                            {/* Visual do Cartão Físico */}
+                            <div className={`w-full h-48 rounded-2xl bg-gradient-to-br ${card.cor || 'from-slate-700 to-slate-900'} p-5 shadow-xl flex flex-col justify-between text-white relative overflow-hidden ring-1 ring-white/20`}>
+                              {/* Elementos Decorativos */}
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                              <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/10 rounded-full blur-xl pointer-events-none"></div>
+                              
+                              <div className="flex justify-between items-start relative z-10">
+                                <span className="font-extrabold text-lg tracking-wider opacity-90">{card.nome}</span>
+                                <div className="flex gap-1.5">
+                                  <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                    <CreditCard className="w-3.5 h-3.5 text-white/80" />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4 relative z-10">
+                                <div className="flex justify-between items-end">
+                                  <div>
+                                    <p className="text-[10px] text-white/60 uppercase tracking-wider mb-0.5">Titular</p>
+                                    <p className="font-mono text-sm tracking-widest">{card.titular.toUpperCase()}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[10px] text-white/60 uppercase tracking-wider mb-0.5">Venc.</p>
+                                    <p className="font-mono text-sm font-bold">Dia {card.diaVencimento}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Informações de Limite Acopladas Abaixo */}
+                            <div className="bg-slate-900 border border-slate-800 rounded-b-xl -mt-4 pt-8 pb-4 px-5 shadow-lg relative z-0">
+                              <div className="flex justify-between text-xs mb-2">
+                                <span className="text-slate-400">Limite Utilizado</span>
+                                <span className="font-bold text-slate-200">R$ {faturaMes.toFixed(2)}</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
+                                <div className={`h-full rounded-full ${progress > 85 ? 'bg-rose-500' : 'bg-purple-500'}`} style={{ width: `${progress}%` }}></div>
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-500">
+                                <span>Disponível: <strong className="text-emerald-400">R$ {limiteDisponivel > 0 ? limiteDisponivel.toFixed(2) : '0.00'}</strong></span>
+                                <span>Total: R$ {card.limite.toFixed(2)}</span>
+                              </div>
+                              
+                              <div className="mt-4 pt-4 border-t border-slate-800 flex justify-end gap-2">
+                                <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors text-xs flex items-center gap-1">
+                                  <Trash2 className="w-3 h-3"/> Remover
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </main>
+
+          {}
+          
+          {/* MODAL: NOVO LANÇAMENTO */}
+          {showAddTxModal && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+                <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center shrink-0">
+                  <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-indigo-400" />
+                    Novo Lançamento
+                  </h3>
+                  <button onClick={() => setShowAddTxModal(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800 p-1 rounded-full"><X className="w-5 h-5"/></button>
+                </div>
+                
+                <form onSubmit={handleCreateTransactionSubmit} className="p-6 overflow-y-auto space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Data</label>
+                      <input type="date" required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.data} onChange={e => setNewTxForm({...newTxForm, data: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Origem / Categoria</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.origem} onChange={e => setNewTxForm({...newTxForm, origem: e.target.value, classificacao: CATEGORIES_MAP[e.target.value][0]})}>
+                        {Object.keys(CATEGORIES_MAP).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Classificação</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.classificacao} onChange={e => setNewTxForm({...newTxForm, classificacao: e.target.value})}>
+                        {(CATEGORIES_MAP[newTxForm.origem] || []).map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Conta Bancária</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.conta} onChange={e => setNewTxForm({...newTxForm, conta: e.target.value})}>
+                        <option value="Conta Talyson">Conta Talyson</option>
+                        <option value="Conta Karla">Conta Karla</option>
+                        <option value="Ambos">Ambos</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Operação</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.operacao} onChange={e => {
+                          const op = e.target.value;
+                          setNewTxForm({...newTxForm, operacao: op, cartaoId: op === 'Crédito' ? (cards[0]?.id || '') : ''})
+                        }}>
+                        <option value="Pix">Pix</option>
+                        <option value="Débito">Débito</option>
+                        <option value="Crédito">Crédito</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="Transferência">Transferência</option>
+                      </select>
+                    </div>
+
+                    {newTxForm.operacao === 'Crédito' && (
+                      <div>
+                        <label className="block text-xs font-semibold text-purple-400 mb-1">Cartão de Crédito</label>
+                        <select required className="w-full bg-purple-950/30 border border-purple-500/50 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                          value={newTxForm.cartaoId} onChange={e => setNewTxForm({...newTxForm, cartaoId: e.target.value})}>
+                          <option value="">Selecione um cartão...</option>
+                          {cards.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    
+                    <div>
+                      <label className="block text-xs font-semibold text-emerald-400 mb-1">Entrada (R$) - Opcional</label>
+                      <input type="number" step="0.01" min="0" placeholder="0.00" className="w-full bg-emerald-950/20 border border-emerald-900/50 rounded-lg px-3 py-2 text-emerald-300 text-sm focus:border-emerald-500 focus:outline-none"
+                        value={newTxForm.entrada} onChange={e => setNewTxForm({...newTxForm, entrada: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-rose-400 mb-1">Saída (R$) - Opcional</label>
+                      <input type="number" step="0.01" min="0" placeholder="0.00" className="w-full bg-rose-950/20 border border-rose-900/50 rounded-lg px-3 py-2 text-rose-300 text-sm focus:border-rose-500 focus:outline-none"
+                        value={newTxForm.saida} onChange={e => setNewTxForm({...newTxForm, saida: e.target.value})} />
+                    </div>
+                    
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Comentário / Descrição</label>
+                      <input type="text" placeholder="Ex: Compra no mercantil..." required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.comentario} onChange={e => setNewTxForm({...newTxForm, comentario: e.target.value})} />
+                    </div>
+                    
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Indivíduo Relacionado</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        value={newTxForm.individuo} onChange={e => setNewTxForm({...newTxForm, individuo: e.target.value})}>
+                        <option value="Talyson">Talyson</option>
+                        <option value="Karla">Karla</option>
+                        <option value="Ambos">Ambos</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 mt-4 border-t border-slate-800 flex justify-end gap-3">
+                    <button type="button" onClick={() => setShowAddTxModal(false)} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors">Cancelar</button>
+                    <button type="submit" className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all">
+                      <Save className="w-4 h-4" /> Salvar Lançamento
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {}
+          {/* MODAL: NOVO CARTÃO */}
+          {showAddCard && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-lg overflow-hidden animate-fade-in">
+                <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                  <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-purple-400" />
+                    Novo Cartão de Crédito
+                  </h3>
+                  <button onClick={() => setShowAddCard(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800 p-1 rounded-full"><X className="w-5 h-5"/></button>
+                </div>
+                
+                <form onSubmit={handleAddCardSubmit} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Nome do Cartão (Apelido)</label>
+                    <input type="text" required placeholder="Ex: Nubank Principal" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      value={newCard.nome} onChange={e => setNewCard({...newCard, nome: e.target.value})} />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Titular</label>
+                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                        value={newCard.titular} onChange={e => setNewCard({...newCard, titular: e.target.value})}>
+                        <option value="Talyson">Talyson</option>
+                        <option value="Karla">Karla</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Limite Total (R$)</label>
+                      <input type="number" required step="0.01" min="0" placeholder="0.00" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                        value={newCard.limite} onChange={e => setNewCard({...newCard, limite: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Dia Fechamento</label>
+                      <input type="number" required min="1" max="31" placeholder="Ex: 5" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                        value={newCard.diaFechamento} onChange={e => setNewCard({...newCard, diaFechamento: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Dia Vencimento</label>
+                      <input type="number" required min="1" max="31" placeholder="Ex: 12" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                        value={newCard.diaVencimento} onChange={e => setNewCard({...newCard, diaVencimento: e.target.value})} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-2">Cor do Cartão</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {GRADIENTS.map(grad => (
+                        <button
+                          key={grad.value}
+                          type="button"
+                          onClick={() => setNewCard({...newCard, cor: grad.value})}
+                          className={`w-8 h-8 rounded-full bg-gradient-to-br ${grad.value} ring-2 ring-offset-2 ring-offset-slate-900 transition-all ${newCard.cor === grad.value ? 'ring-white scale-110' : 'ring-transparent hover:scale-105'}`}
+                          title={grad.label}
+                        ></button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 mt-4 border-t border-slate-800 flex justify-end gap-3">
+                    <button type="button" onClick={() => setShowAddCard(false)} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors">Cancelar</button>
+                    <button type="submit" className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all">
+                      <Save className="w-4 h-4" /> Cadastrar Cartão
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {}
+          {/* CUSTOM CONFIRM MODAL */}
+          {confirmModal.isOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+              <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl">
+                <div className="flex items-center gap-3 mb-4 text-rose-400">
+                  <AlertTriangle className="w-6 h-6" />
+                  <h3 className="text-lg font-bold">{confirmModal.title}</h3>
+                </div>
+                <p className="text-slate-300 text-sm mb-6">{confirmModal.message}</p>
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setConfirmModal({ isOpen: false })} className="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white transition-colors">
+                    Cancelar
+                  </button>
+                  <button onClick={confirmModal.onConfirm} className="px-4 py-2 text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors shadow-lg shadow-rose-600/20">
+                    Confirmar Exclusão
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {}
+          {/* TOAST NOTIFICATION */}
+          {toast && (
+            <div className="fixed bottom-6 right-6 z-[100] animate-fade-in-up">
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border ${toast.type === 'success' ? 'bg-emerald-950/80 border-emerald-500/30 text-emerald-100' : 'bg-rose-950/80 border-rose-500/30 text-rose-100'} backdrop-blur-md`}>
+                {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
+                <p className="text-sm font-medium">{toast.message}</p>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
