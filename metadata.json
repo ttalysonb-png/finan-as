@@ -1,0 +1,6 @@
+{
+  "name": "Sistema de Finanças Pessoais",
+  "description": "Sistema de gestão financeira pessoal com controle orçamentário, cartões de crédito, histórico e gerenciamento de contas fixas recorrentes integrado ao Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
