@@ -59,7 +59,7 @@
       Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2,
       Megaphone, Calendar, X, Eye, RefreshCw, ChevronLeft, ChevronRight, Save,
       Info, Check, Download, Upload, PlusCircle, BarChart3, TrendingUp, TrendingDown, DollarSign,
-      PieChart, Activity, ShieldCheck, Zap
+      PieChart, Activity, ShieldCheck, Zap, History, FileText
     } from 'lucide-react';
 
     // CONFIGURAÇÃO DO SUPABASE
@@ -98,6 +98,26 @@
       { label: 'Cinza / Escuro', value: 'from-slate-700 to-slate-900' },
       { label: 'Vermelho / Rubi', value: 'from-rose-600 to-red-900' }
     ];
+
+    // Helper para calcular a fatura do cartão considerando a regra do dia 16:
+    // Se o dia da transação for >= 16, ela cai na fatura do mês seguinte.
+    const getTransactionInvoicePeriod = (dateStr) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length < 2) return dateStr.substring(0, 7);
+      let year = parseInt(parts[0], 10);
+      let month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+
+      if (day >= 16) {
+        month += 1;
+        if (month > 12) {
+          month = 1;
+          year += 1;
+        }
+      }
+      return `${year}-${String(month).padStart(2, '0')}`;
+    };
 
     function App() {
       const currentDate = new Date();
@@ -342,16 +362,25 @@
 
       const consolidatedBalance = talysonBalance + karlaBalance;
 
+      // Função para calcular a fatura de um cartão no período selecionado (considerando a regra do dia 16)
       const getCardInvoice = (cardId, baseValue) => {
-        const creditSum = monthlyTransactions
-          .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId))
+        // Transações de crédito cujo período de fatura calculado coincide com selectedPeriodKey
+        const creditSum = transactions
+          .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId) && getTransactionInvoicePeriod(t.data) === selectedPeriodKey)
           .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
         return (Number(baseValue) || 0) + creditSum;
       };
 
+      // Lista detalhada de gastos do cartão no período selecionado
+      const getCardTransactionsForPeriod = (cardId) => {
+        return transactions.filter(
+          t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId) && getTransactionInvoicePeriod(t.data) === selectedPeriodKey
+        );
+      };
+
       const totalFaturasCartoes = useMemo(() => {
         return cards.reduce((acc, c) => acc + getCardInvoice(c.id, c.faturaAtual), 0);
-      }, [cards, monthlyTransactions]);
+      }, [cards, transactions, selectedPeriodKey]);
 
       const expenseCategories = useMemo(() => Object.keys(categoriesMap).filter(cat => cat !== 'Trabalho'), [categoriesMap]);
 
@@ -969,7 +998,7 @@
                   Sistema de Finanças Pessoais
                   <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-indigo-400 border border-slate-700">Supabase DB</span>
                 </h1>
-                <p className="text-xs text-slate-400">Controle Orçamentário e Cartões de Crédito</p>
+                <p className="text-xs text-slate-400">Controle Orçamentário e Cartões de Crédito (Fechamento dia 16)</p>
               </div>
             </div>
 
@@ -1239,7 +1268,6 @@
                                   ) : <span className="text-slate-400">{tx.classificacao}</span>}
                                 </td>
                                 
-                                {/* COLUNA 4: CONTA COM DESTAQUE DIFERENCIADO PARA TALYSON E KARLA */}
                                 <td className="p-2">
                                   {spreadsheetMode ? (
                                     <select 
@@ -1582,13 +1610,14 @@
                 </div>
               )}
 
+              {}
               {/* ABA 4: CARTÕES DE CRÉDITO */}
               {financeTab === 'cartoes' && (
                 <div className="space-y-6">
                   <div className="flex justify-between items-center">
                     <div>
                       <h2 className="text-lg font-bold text-white">Cartões de Crédito Cadastrados</h2>
-                      <p className="text-xs text-slate-400">Gerencie limites, vencimentos e faturas mensais</p>
+                      <p className="text-xs text-slate-400">Gastos efetuados a partir do dia 16 caem na fatura do mês seguinte</p>
                     </div>
                     <button
                       onClick={() => setShowAddCard(true)}
@@ -1608,9 +1637,18 @@
                               <span className="text-[10px] uppercase tracking-widest text-white/70 font-bold">{card.titular}</span>
                               <h3 className="text-xl font-black mt-0.5">{card.nome}</h3>
                             </div>
-                            <button onClick={() => handleDeleteCard(card.id)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-black/30 hover:bg-black/50 rounded-lg text-rose-300">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button 
+                                onClick={() => setSelectedCardForDetails(selectedCardForDetails?.id === card.id ? null : card)} 
+                                className="p-1.5 bg-black/30 hover:bg-black/50 rounded-lg text-white transition-colors"
+                                title="Ver Histórico da Fatura"
+                              >
+                                <History className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteCard(card.id)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-black/30 hover:bg-black/50 rounded-lg text-rose-300">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="relative z-10 my-auto">
@@ -1632,6 +1670,102 @@
                       );
                     })}
                   </div>
+
+                  {/* SEÇÃO DE HISTÓRICO DA FATURA DO CARTÃO SELECIONADO */}
+                  {cards.length > 0 && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4 mt-8">
+                      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-purple-500/20 text-purple-400 rounded-lg">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-white flex items-center gap-2">
+                              Histórico de Gastos da Fatura — {selectedCardForDetails ? selectedCardForDetails.nome : cards[0].nome}
+                            </h3>
+                            <p className="text-xs text-slate-400">
+                              Fatura referente a {MONTHS[selectedMonth - 1]} / {selectedYear} (Inclui compras do mês anterior após o dia 16)
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-slate-400 font-semibold">Selecionar Cartão:</label>
+                          <select
+                            value={selectedCardForDetails ? selectedCardForDetails.id : cards[0].id}
+                            onChange={e => {
+                              const cId = Number(e.target.value);
+                              const found = cards.find(c => c.id === cId);
+                              setSelectedCardForDetails(found || null);
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-purple-500"
+                          >
+                            {cards.map(c => (
+                              <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* TABELA DE LANÇAMENTOS DA FATURA */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                            <tr>
+                              <th className="p-3">Data da Compra</th>
+                              <th className="p-3">Categoria / Origem</th>
+                              <th className="p-3">Classificação</th>
+                              <th className="p-3">Comentário</th>
+                              <th className="p-3">Indivíduo</th>
+                              <th className="p-3 text-right">Valor da Parcela / Gasto (R$)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {(() => {
+                              const targetCardId = selectedCardForDetails ? selectedCardForDetails.id : cards[0].id;
+                              const cardTxs = getCardTransactionsForPeriod(targetCardId);
+                              const baseFat = selectedCardForDetails ? Number(selectedCardForDetails.faturaAtual) : Number(cards[0].faturaAtual);
+
+                              if (cardTxs.length === 0 && baseFat === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan="6" className="p-8 text-center text-slate-500">
+                                      Nenhum gasto registrado nesta fatura para o período selecionado.
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  {baseFat > 0 && (
+                                    <tr className="bg-purple-950/20">
+                                      <td className="p-3 font-mono">-</td>
+                                      <td className="p-3 font-semibold text-purple-300">Fatura Inicial Cadastrada</td>
+                                      <td className="p-3 text-slate-400">Saldo Anterior</td>
+                                      <td className="p-3 text-slate-300">Valor inicial informado no cadastro do cartão</td>
+                                      <td className="p-3 text-slate-400">-</td>
+                                      <td className="p-3 text-right font-mono font-bold text-purple-300">R$ {baseFat.toFixed(2)}</td>
+                                    </tr>
+                                  )}
+                                  {cardTxs.map(t => (
+                                    <tr key={t.id} className="hover:bg-slate-800/50">
+                                      <td className="p-3 font-mono">{t.data.split('-').reverse().join('/')}</td>
+                                      <td className="p-3 font-semibold text-slate-200">{t.origem}</td>
+                                      <td className="p-3 text-slate-400">{t.classificacao}</td>
+                                      <td className="p-3 text-slate-300">{t.comentario || '-'}</td>
+                                      <td className="p-3 text-slate-400">{t.individuo}</td>
+                                      <td className="p-3 text-right font-mono font-bold text-rose-400">- R$ {(Number(t.saída) || 0).toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              );
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
