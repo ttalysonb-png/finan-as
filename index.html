@@ -59,7 +59,7 @@
       Wallet, CreditCard, Plus, Trash2, Target, Edit3, AlertTriangle, CheckCircle2,
       Megaphone, Calendar, X, Eye, RefreshCw, ChevronLeft, ChevronRight, Save,
       Info, Check, Download, Upload, PlusCircle, BarChart3, TrendingUp, TrendingDown, DollarSign,
-      PieChart, Activity, ShieldCheck, Zap, History, FileText
+      PieChart, Activity, ShieldCheck, Zap, History, FileText, Filter
     } from 'lucide-react';
 
     // CONFIGURAÇÃO DO SUPABASE
@@ -100,7 +100,6 @@
     ];
 
     // Helper para calcular a fatura do cartão considerando a regra do dia 16:
-    // Se o dia da transação for >= 16, ela cai na fatura do mês seguinte.
     const getTransactionInvoicePeriod = (dateStr) => {
       if (!dateStr) return '';
       const parts = dateStr.split('-');
@@ -130,9 +129,20 @@
       const [budgets, setBudgets] = useState({});
       const [cards, setCards] = useState([]);
       const [spreadsheetMode, setSpreadsheetMode] = useState(false);
+      const [cardSpreadsheetMode, setCardSpreadsheetMode] = useState(false);
       const [showAllMonths, setShowAllMonths] = useState(false);
       const [selectedTxIds, setSelectedTxIds] = useState([]);
       const [searchTx, setSearchTx] = useState('');
+
+      // NOVOS ESTADOS PARA FILTROS POR COLUNA NO PAINEL GERAL
+      const [columnFilters, setColumnFilters] = useState({
+        origem: '',
+        classificacao: '',
+        conta: '',
+        operacao: '',
+        individuo: ''
+      });
+      const [showColumnFilters, setShowColumnFilters] = useState(false);
 
       const [categoriesMap, setCategoriesMap] = useState(DEFAULT_CATEGORIES_MAP);
       const [accounts, setAccounts] = useState(['Conta Talyson', 'Conta Karla', 'Ambos', 'Outro']);
@@ -240,7 +250,7 @@
           ]);
 
           if (cardsRes.data) {
-            setCards(cardsRes.data.map(c => ({
+            const loadedCards = cardsRes.data.map(c => ({
               id: c.id,
               nome: c.nome,
               titular: c.titular,
@@ -249,7 +259,11 @@
               diaFechamento: c.dia_fechamento,
               diaVencimento: c.dia_vencimento,
               cor: c.cor
-            })));
+            }));
+            setCards(loadedCards);
+            if (loadedCards.length > 0 && !selectedCardForDetails) {
+              setSelectedCardForDetails(loadedCards[0]);
+            }
           }
 
           if (budgetsRes.data) {
@@ -362,16 +376,13 @@
 
       const consolidatedBalance = talysonBalance + karlaBalance;
 
-      // Função para calcular a fatura de um cartão no período selecionado (considerando a regra do dia 16)
       const getCardInvoice = (cardId, baseValue) => {
-        // Transações de crédito cujo período de fatura calculado coincide com selectedPeriodKey
         const creditSum = transactions
           .filter(t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId) && getTransactionInvoicePeriod(t.data) === selectedPeriodKey)
           .reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
         return (Number(baseValue) || 0) + creditSum;
       };
 
-      // Lista detalhada de gastos do cartão no período selecionado
       const getCardTransactionsForPeriod = (cardId) => {
         return transactions.filter(
           t => t.operacao === 'Crédito' && Number(t.cartaoId) === Number(cardId) && getTransactionInvoicePeriod(t.data) === selectedPeriodKey
@@ -578,15 +589,50 @@
         return items;
       }, [selectedMonth, selectedYear, expenseCategories, budgets, monthlyTransactions, totalExpensePlanned, totalExpenseExecuted, totalExpenseRemaining, globalExpensePercentage, totalFaturasCartoes, selectedPeriodKey]);
 
+      // LISTAS ÚNICAS PARA OS DROPDOWNS DE FILTROS POR COLUNA
+      const uniqueOrigins = useMemo(() => {
+        const s = new Set(monthlyTransactions.map(t => t.origem).filter(Boolean));
+        return Array.from(s).sort();
+      }, [monthlyTransactions]);
+
+      const uniqueClassifications = useMemo(() => {
+        const s = new Set(monthlyTransactions.map(t => t.classificacao).filter(Boolean));
+        return Array.from(s).sort();
+      }, [monthlyTransactions]);
+
+      const uniqueAccounts = useMemo(() => {
+        const s = new Set(monthlyTransactions.map(t => t.conta).filter(Boolean));
+        return Array.from(s).sort();
+      }, [monthlyTransactions]);
+
+      const uniqueOperations = useMemo(() => {
+        const s = new Set(monthlyTransactions.map(t => t.operacao).filter(Boolean));
+        return Array.from(s).sort();
+      }, [monthlyTransactions]);
+
+      const uniqueIndividuals = useMemo(() => {
+        const s = new Set(monthlyTransactions.map(t => t.individuo).filter(Boolean));
+        return Array.from(s).sort();
+      }, [monthlyTransactions]);
+
       const filteredTransactions = useMemo(() => {
         return [...monthlyTransactions]
           .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime() || b.id - a.id)
-          .filter(t => 
-            (t.comentario || '').toLowerCase().includes(searchTx.toLowerCase()) || 
-            (t.origem || '').toLowerCase().includes(searchTx.toLowerCase()) ||
-            (t.classificacao || '').toLowerCase().includes(searchTx.toLowerCase())
-          );
-      }, [monthlyTransactions, searchTx]);
+          .filter(t => {
+            const matchesSearch = 
+              (t.comentario || '').toLowerCase().includes(searchTx.toLowerCase()) || 
+              (t.origem || '').toLowerCase().includes(searchTx.toLowerCase()) ||
+              (t.classificacao || '').toLowerCase().includes(searchTx.toLowerCase());
+
+            const matchesOrigem = !columnFilters.origem || t.origem === columnFilters.origem;
+            const matchesClassificacao = !columnFilters.classificacao || t.classificacao === columnFilters.classificacao;
+            const matchesConta = !columnFilters.conta || t.conta === columnFilters.conta;
+            const matchesOperacao = !columnFilters.operacao || t.operacao === columnFilters.operacao;
+            const matchesIndividuo = !columnFilters.individuo || t.individuo === columnFilters.individuo;
+
+            return matchesSearch && matchesOrigem && matchesClassificacao && matchesConta && matchesOperacao && matchesIndividuo;
+          });
+      }, [monthlyTransactions, searchTx, columnFilters]);
 
       const handleCreateTransactionSubmit = async (e) => {
         e.preventDefault();
@@ -897,7 +943,7 @@
         const { data, error } = await supabase.from('cards').insert([payload]).select().single();
 
         if (!error && data) {
-          setCards([...cards, {
+          const newCItem = {
             id: data.id,
             nome: data.nome,
             titular: data.titular,
@@ -906,7 +952,9 @@
             diaFechamento: data.dia_fechamento,
             diaVencimento: data.dia_vencimento,
             cor: data.cor
-          }]);
+          };
+          setCards([...cards, newCItem]);
+          setSelectedCardForDetails(newCItem);
           setNewCard({
             nome: '',
             titular: 'Talyson',
@@ -929,9 +977,10 @@
           title: 'Remover Cartão',
           message: 'Cuidado: Remover o cartão pode afetar os lançamentos já associados a ele. Tem certeza?',
           onConfirm: async () => {
-            setCards(prev => prev.filter(c => c.id !== cardId));
+            const nextCards = cards.filter(c => c.id !== cardId);
+            setCards(nextCards);
             if (selectedCardForDetails && selectedCardForDetails.id === cardId) {
-              setSelectedCardForDetails(null);
+              setSelectedCardForDetails(nextCards[0] || null);
             }
             await supabase.from('cards').delete().eq('id', cardId);
             showToast('Cartão removido.');
@@ -1136,7 +1185,7 @@
                   </div>
 
                   {/* TABELA HISTÓRICO */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl flex flex-col h-[600px]">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl flex flex-col h-[640px]">
                     <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 shrink-0 bg-slate-900/95">
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-sm font-bold flex items-center gap-2">
@@ -1162,6 +1211,15 @@
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             {spreadsheetMode ? 'Modo Edição (ON)' : 'Ativar Edição Direta'}
+                          </button>
+
+                          <button
+                            onClick={() => setShowColumnFilters(!showColumnFilters)}
+                            className={`text-xs border px-3 py-1.5 rounded font-semibold transition-colors flex items-center gap-1.5
+                              ${showColumnFilters ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                          >
+                            <Filter className="w-3.5 h-3.5" />
+                            {showColumnFilters ? 'Ocultar Filtros de Colunas' : 'Filtros por Colunas'}
                           </button>
 
                           <button onClick={handleExportCSV} className="text-xs border border-slate-800 bg-slate-950 text-emerald-400 hover:bg-slate-800 px-3 py-1.5 rounded font-semibold transition-colors flex items-center gap-1.5">
@@ -1214,6 +1272,89 @@
                             <th className="p-3 min-w-[120px]">10. Indivíduo</th>
                             <th className="p-3 w-12 text-center">Ações</th>
                           </tr>
+
+                          {/* LINHA DE FILTROS POR COLUNA */}
+                          {showColumnFilters && (
+                            <tr className="bg-slate-900 border-b border-slate-800 text-slate-300 normal-case">
+                              <th className="p-2 text-center">
+                                {(columnFilters.origem || columnFilters.classificacao || columnFilters.conta || columnFilters.operacao || columnFilters.individuo) && (
+                                  <button
+                                    onClick={() => setColumnFilters({ origem: '', classificacao: '', conta: '', operacao: '', individuo: '' })}
+                                    className="text-[10px] text-rose-400 hover:underline font-bold"
+                                    title="Limpar Filtros"
+                                  >
+                                    Limpar
+                                  </button>
+                                )}
+                              </th>
+                              <th className="p-2">
+                                <span className="text-[10px] text-slate-500 block">Filtro Data</span>
+                              </th>
+                              <th className="p-2">
+                                <select
+                                  value={columnFilters.origem}
+                                  onChange={e => setColumnFilters({...columnFilters, origem: e.target.value})}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 focus:outline-none"
+                                >
+                                  <option value="">Todas as Origens</option>
+                                  {uniqueOrigins.map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                              </th>
+                              <th className="p-2">
+                                <select
+                                  value={columnFilters.classificacao}
+                                  onChange={e => setColumnFilters({...columnFilters, classificacao: e.target.value})}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 focus:outline-none"
+                                >
+                                  <option value="">Todas Classificações</option>
+                                  {uniqueClassifications.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </th>
+                              <th className="p-2">
+                                <select
+                                  value={columnFilters.conta}
+                                  onChange={e => setColumnFilters({...columnFilters, conta: e.target.value})}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 focus:outline-none"
+                                >
+                                  <option value="">Todas as Contas</option>
+                                  {uniqueAccounts.map(a => <option key={a} value={a}>{a}</option>)}
+                                </select>
+                              </th>
+                              <th className="p-2">
+                                <select
+                                  value={columnFilters.operacao}
+                                  onChange={e => setColumnFilters({...columnFilters, operacao: e.target.value})}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 focus:outline-none"
+                                >
+                                  <option value="">Todas Operações</option>
+                                  {uniqueOperations.map(op => <option key={op} value={op}>{op}</option>)}
+                                </select>
+                              </th>
+                              <th className="p-2">
+                                <span className="text-[10px] text-slate-500 block">-</span>
+                              </th>
+                              <th className="p-2 text-right">
+                                <span className="text-[10px] text-slate-500 block">-</span>
+                              </th>
+                              <th className="p-2 text-right">
+                                <span className="text-[10px] text-slate-500 block">-</span>
+                              </th>
+                              <th className="p-2">
+                                <span className="text-[10px] text-slate-500 block">-</span>
+                              </th>
+                              <th className="p-2">
+                                <select
+                                  value={columnFilters.individuo}
+                                  onChange={e => setColumnFilters({...columnFilters, individuo: e.target.value})}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-indigo-300 focus:outline-none"
+                                >
+                                  <option value="">Todos Indivíduos</option>
+                                  {uniqueIndividuals.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                                </select>
+                              </th>
+                              <th className="p-2"></th>
+                            </tr>
+                          )}
                         </thead>
                         <tbody className="divide-y divide-slate-800">
                           {filteredTransactions.length === 0 ? (
@@ -1221,7 +1362,7 @@
                               <td colSpan="12" className="p-8 text-center text-slate-500">
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <Info className="w-8 h-8 text-slate-600" />
-                                  <p>Nenhum lançamento encontrado para este período.</p>
+                                  <p>Nenhum lançamento encontrado para este período com os filtros aplicados.</p>
                                 </div>
                               </td>
                             </tr>
@@ -1610,8 +1751,7 @@
                 </div>
               )}
 
-              {}
-              {/* ABA 4: CARTÕES DE CRÉDITO */}
+              {/* ABA 4: CARTÕES DE CRÉDITO COM OPÇÃO DE EDITAR E EXCLUIR */}
               {financeTab === 'cartoes' && (
                 <div className="space-y-6">
                   <div className="flex justify-between items-center">
@@ -1630,8 +1770,9 @@
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {cards.map(card => {
                       const invoiceValue = getCardInvoice(card.id, card.faturaAtual);
+                      const isSelectedCard = selectedCardForDetails && selectedCardForDetails.id === card.id;
                       return (
-                        <div key={card.id} className={`bg-gradient-to-br ${card.cor || 'from-indigo-600 to-purple-800'} rounded-2xl p-6 text-white shadow-xl flex flex-col justify-between h-52 relative overflow-hidden group`}>
+                        <div key={card.id} className={`bg-gradient-to-br ${card.cor || 'from-indigo-600 to-purple-800'} rounded-2xl p-6 text-white shadow-xl flex flex-col justify-between h-52 relative overflow-hidden group border-2 ${isSelectedCard ? 'border-white ring-4 ring-purple-500/30' : 'border-transparent'}`}>
                           <div className="flex justify-between items-start relative z-10">
                             <div>
                               <span className="text-[10px] uppercase tracking-widest text-white/70 font-bold">{card.titular}</span>
@@ -1639,9 +1780,9 @@
                             </div>
                             <div className="flex items-center gap-1.5">
                               <button 
-                                onClick={() => setSelectedCardForDetails(selectedCardForDetails?.id === card.id ? null : card)} 
-                                className="p-1.5 bg-black/30 hover:bg-black/50 rounded-lg text-white transition-colors"
-                                title="Ver Histórico da Fatura"
+                                onClick={() => setSelectedCardForDetails(card)} 
+                                className={`p-1.5 rounded-lg text-white transition-colors ${isSelectedCard ? 'bg-white/30' : 'bg-black/30 hover:bg-black/50'}`}
+                                title="Ver Histórico e Gerenciar Fatura"
                               >
                                 <History className="w-4 h-4" />
                               </button>
@@ -1671,7 +1812,7 @@
                     })}
                   </div>
 
-                  {/* SEÇÃO DE HISTÓRICO DA FATURA DO CARTÃO SELECIONADO */}
+                  {/* SEÇÃO DE HISTÓRICO E EDIÇÃO DA FATURA DO CARTÃO SELECIONADO */}
                   {cards.length > 0 && (
                     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4 mt-8">
                       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -1681,33 +1822,44 @@
                           </div>
                           <div>
                             <h3 className="text-base font-bold text-white flex items-center gap-2">
-                              Histórico de Gastos da Fatura — {selectedCardForDetails ? selectedCardForDetails.nome : cards[0].nome}
+                              Lançamentos da Fatura — {selectedCardForDetails ? selectedCardForDetails.nome : cards[0].nome}
                             </h3>
                             <p className="text-xs text-slate-400">
-                              Fatura referente a {MONTHS[selectedMonth - 1]} / {selectedYear} (Inclui compras do mês anterior após o dia 16)
+                              Fatura referente a {MONTHS[selectedMonth - 1]} / {selectedYear} (Dia 16 do mês anterior até o dia 15 deste mês)
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs text-slate-400 font-semibold">Selecionar Cartão:</label>
-                          <select
-                            value={selectedCardForDetails ? selectedCardForDetails.id : cards[0].id}
-                            onChange={e => {
-                              const cId = Number(e.target.value);
-                              const found = cards.find(c => c.id === cId);
-                              setSelectedCardForDetails(found || null);
-                            }}
-                            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-purple-500"
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => setCardSpreadsheetMode(!cardSpreadsheetMode)}
+                            className={`text-xs border px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1.5
+                              ${cardSpreadsheetMode ? 'bg-purple-600 border-purple-500 text-white shadow-md' : 'bg-slate-950 border-slate-700 text-purple-300 hover:bg-slate-800'}`}
                           >
-                            {cards.map(c => (
-                              <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
-                            ))}
-                          </select>
+                            <Edit3 className="w-3.5 h-3.5" />
+                            {cardSpreadsheetMode ? 'Modo Edição (ON)' : 'Ativar Edição na Fatura'}
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-slate-400 font-semibold">Cartão:</label>
+                            <select
+                              value={selectedCardForDetails ? selectedCardForDetails.id : cards[0].id}
+                              onChange={e => {
+                                const cId = Number(e.target.value);
+                                const found = cards.find(c => c.id === cId);
+                                setSelectedCardForDetails(found || null);
+                              }}
+                              className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-semibold focus:outline-none focus:border-purple-500"
+                            >
+                              {cards.map(c => (
+                                <option key={c.id} value={c.id}>{c.nome} ({c.titular})</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       </div>
 
-                      {/* TABELA DE LANÇAMENTOS DA FATURA */}
+                      {/* TABELA DE LANÇAMENTOS DA FATURA COM EDIÇÃO E EXCLUSÃO */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs whitespace-nowrap">
                           <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
@@ -1717,7 +1869,8 @@
                               <th className="p-3">Classificação</th>
                               <th className="p-3">Comentário</th>
                               <th className="p-3">Indivíduo</th>
-                              <th className="p-3 text-right">Valor da Parcela / Gasto (R$)</th>
+                              <th className="p-3 text-right">Valor do Gasto (R$)</th>
+                              <th className="p-3 text-center w-16">Ações</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800">
@@ -1729,7 +1882,7 @@
                               if (cardTxs.length === 0 && baseFat === 0) {
                                 return (
                                   <tr>
-                                    <td colSpan="6" className="p-8 text-center text-slate-500">
+                                    <td colSpan="7" className="p-8 text-center text-slate-500">
                                       Nenhum gasto registrado nesta fatura para o período selecionado.
                                     </td>
                                   </tr>
@@ -1746,16 +1899,58 @@
                                       <td className="p-3 text-slate-300">Valor inicial informado no cadastro do cartão</td>
                                       <td className="p-3 text-slate-400">-</td>
                                       <td className="p-3 text-right font-mono font-bold text-purple-300">R$ {baseFat.toFixed(2)}</td>
+                                      <td className="p-3 text-center text-slate-500">-</td>
                                     </tr>
                                   )}
                                   {cardTxs.map(t => (
-                                    <tr key={t.id} className="hover:bg-slate-800/50">
-                                      <td className="p-3 font-mono">{t.data.split('-').reverse().join('/')}</td>
-                                      <td className="p-3 font-semibold text-slate-200">{t.origem}</td>
-                                      <td className="p-3 text-slate-400">{t.classificacao}</td>
-                                      <td className="p-3 text-slate-300">{t.comentario || '-'}</td>
-                                      <td className="p-3 text-slate-400">{t.individuo}</td>
-                                      <td className="p-3 text-right font-mono font-bold text-rose-400">- R$ {(Number(t.saída) || 0).toFixed(2)}</td>
+                                    <tr key={t.id} className="hover:bg-slate-800/50 transition-colors">
+                                      <td className="p-2">
+                                        {cardSpreadsheetMode ? (
+                                          <input type="date" value={t.data} onChange={e => handleUpdateTx(t.id, 'data', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs w-32 focus:outline-none focus:border-purple-500" />
+                                        ) : <span className="font-mono">{t.data.split('-').reverse().join('/')}</span>}
+                                      </td>
+
+                                      <td className="p-2">
+                                        {cardSpreadsheetMode ? (
+                                          <select value={t.origem} onChange={e => handleUpdateTx(t.id, 'origem', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                                            {Object.keys(categoriesMap).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                          </select>
+                                        ) : <span className="font-semibold text-slate-200">{t.origem}</span>}
+                                      </td>
+
+                                      <td className="p-2">
+                                        {cardSpreadsheetMode ? (
+                                          <select value={t.classificacao} onChange={e => handleUpdateTx(t.id, 'classificacao', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                                            {(categoriesMap[t.origem] || ['Geral']).map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                                          </select>
+                                        ) : <span className="text-slate-400">{t.classificacao}</span>}
+                                      </td>
+
+                                      <td className="p-2">
+                                        {cardSpreadsheetMode ? (
+                                          <input type="text" value={t.comentario || ''} onChange={e => handleUpdateTx(t.id, 'comentario', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs w-full focus:outline-none focus:border-purple-500" />
+                                        ) : <span className="text-slate-300">{t.comentario || '-'}</span>}
+                                      </td>
+
+                                      <td className="p-2">
+                                        {cardSpreadsheetMode ? (
+                                          <select value={t.individuo} onChange={e => handleUpdateTx(t.id, 'individuo', e.target.value)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                                            {['Talyson', 'Karla', 'Ambos'].map(i => <option key={i} value={i}>{i}</option>)}
+                                          </select>
+                                        ) : <span className="text-slate-400">{t.individuo}</span>}
+                                      </td>
+
+                                      <td className="p-2 text-right">
+                                        {cardSpreadsheetMode ? (
+                                          <input type="number" step="0.01" value={t.saída} onChange={e => handleUpdateTx(t.id, 'saída', parseFloat(e.target.value) || 0)} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-rose-400 font-bold text-xs w-24 text-right focus:outline-none focus:border-purple-500" />
+                                        ) : <span className="font-mono font-bold text-rose-400">- R$ {(Number(t.saída) || 0).toFixed(2)}</span>}
+                                      </td>
+
+                                      <td className="p-2 text-center">
+                                        <button onClick={() => handleDeleteSingleTx(t.id)} className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors" title="Excluir Lançamento">
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </td>
                                     </tr>
                                   ))}
                                 </>
@@ -1908,9 +2103,34 @@
 
                   <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
                     <button type="button" onClick={() => setShowAddTxModal(false)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancelar</button>
-                    <button type="submit" className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/20">
-                      <Save className="w-4 h-4" /> Salvar Lançamento
-                    </button>
+                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30">Salvar Lançamento</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: ADICIONAR ITEM CUSTOMIZADO (Categoria, Classificação, Conta) */}
+          {customModal.isOpen && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-md overflow-hidden flex flex-col">
+                <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                  <h3 className="font-bold text-md text-white">
+                    {customModal.type === 'origem' ? 'Nova Categoria' : customModal.type === 'classificacao' ? `Nova Classificação (${customModal.categoryTarget || 'Geral'})` : 'Nova Conta Bancária'}
+                  </h3>
+                  <button onClick={() => setCustomModal({ isOpen: false, type: '', categoryTarget: '', name: '' })} className="text-slate-400 hover:text-white bg-slate-800 p-1 rounded-full"><X className="w-4 h-4"/></button>
+                </div>
+                
+                <form onSubmit={handleAddCustomItemSubmit} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Nome</label>
+                    <input type="text" required autoFocus placeholder="Digite o nome..." className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                      value={customModal.name} onChange={e => setCustomModal({...customModal, name: e.target.value})} />
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-3">
+                    <button type="button" onClick={() => setCustomModal({ isOpen: false, type: '', categoryTarget: '', name: '' })} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancelar</button>
+                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold">Adicionar</button>
                   </div>
                 </form>
               </div>
@@ -1920,133 +2140,87 @@
           {/* MODAL: NOVO CARTÃO */}
           {showAddCard && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-lg overflow-hidden">
+              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-md overflow-hidden flex flex-col">
                 <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
                   <h3 className="font-bold text-lg text-white flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-purple-400" />
-                    Novo Cartão de Crédito
+                    Adicionar Cartão de Crédito
                   </h3>
-                  <button onClick={() => setShowAddCard(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800 p-1 rounded-full"><X className="w-5 h-5"/></button>
+                  <button onClick={() => setShowAddCard(false)} className="text-slate-400 hover:text-white bg-slate-800 p-1 rounded-full"><X className="w-5 h-5"/></button>
                 </div>
                 
                 <form onSubmit={handleAddCardSubmit} className="p-6 space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-1">Nome do Cartão (Apelido)</label>
-                    <input type="text" required placeholder="Ex: Nubank Principal" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Nome do Cartão</label>
+                    <input type="text" required placeholder="Ex: Nubank, Visa Infinite..." className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
                       value={newCard.nome} onChange={e => setNewCard({...newCard, nome: e.target.value})} />
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-400 mb-1">Titular</label>
-                      <select required className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
-                        value={newCard.titular} onChange={e => setNewCard({...newCard, titular: e.target.value})}>
-                        <option value="Talyson">Talyson</option>
-                        <option value="Karla">Karla</option>
-                      </select>
-                    </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Titular</label>
+                    <select className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      value={newCard.titular} onChange={e => setNewCard({...newCard, titular: e.target.value})}>
+                      <option value="Talyson">Talyson</option>
+                      <option value="Karla">Karla</option>
+                      <option value="Ambos">Ambos</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-400 mb-1">Limite Total (R$)</label>
-                      <input type="number" required step="0.01" min="0" placeholder="0.00" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      <input type="number" step="0.01" required placeholder="5000.00" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
                         value={newCard.limite} onChange={e => setNewCard({...newCard, limite: e.target.value})} />
                     </div>
                     <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Fatura Inicial (R$)</label>
+                      <input type="number" step="0.01" placeholder="0.00" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                        value={newCard.faturaAtual} onChange={e => setNewCard({...newCard, faturaAtual: e.target.value})} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
                       <label className="block text-xs font-semibold text-slate-400 mb-1">Dia Fechamento</label>
-                      <input type="number" required min="1" max="31" placeholder="Ex: 5" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      <input type="number" min="1" max="31" required placeholder="Ex: 10" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
                         value={newCard.diaFechamento} onChange={e => setNewCard({...newCard, diaFechamento: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-400 mb-1">Dia Vencimento</label>
-                      <input type="number" required min="1" max="31" placeholder="Ex: 12" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      <input type="number" min="1" max="31" required placeholder="Ex: 17" className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
                         value={newCard.diaVencimento} onChange={e => setNewCard({...newCard, diaVencimento: e.target.value})} />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-2">Cor do Cartão</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {GRADIENTS.map(grad => (
-                        <button
-                          key={grad.value}
-                          type="button"
-                          onClick={() => setNewCard({...newCard, cor: grad.value})}
-                          className={`w-8 h-8 rounded-full bg-gradient-to-br ${grad.value} ring-2 ring-offset-2 ring-offset-slate-900 transition-all ${newCard.cor === grad.value ? 'ring-white scale-110' : 'ring-transparent hover:scale-105'}`}
-                          title={grad.label}
-                        ></button>
-                      ))}
-                    </div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Estilo do Cartão</label>
+                    <select className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-purple-500 focus:outline-none"
+                      value={newCard.cor} onChange={e => setNewCard({...newCard, cor: e.target.value})}>
+                      {GRADIENTS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                    </select>
                   </div>
-                  
-                  <div className="pt-4 mt-4 border-t border-slate-800 flex justify-end gap-3">
-                    <button type="button" onClick={() => setShowAddCard(false)} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors">Cancelar</button>
-                    <button type="submit" className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-lg flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all">
-                      <Save className="w-4 h-4" /> Cadastrar Cartão
-                    </button>
+
+                  <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
+                    <button type="button" onClick={() => setShowAddCard(false)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancelar</button>
+                    <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg shadow-purple-600/30">Salvar Cartão</button>
                   </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* MODAL: CUSTOM ADD ITEM */}
-          {customModal.isOpen && (
-            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
-              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-md overflow-hidden">
-                <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
-                  <h3 className="font-bold text-md text-white flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-indigo-400" />
-                    {customModal.type === 'origem' && 'Cadastrar Nova Categoria (Origem)'}
-                    {customModal.type === 'classificacao' && `Cadastrar Classificação em "${customModal.categoryTarget || newTxForm.origem}"`}
-                    {customModal.type === 'conta' && 'Cadastrar Nova Conta Bancária'}
-                  </h3>
-                  <button onClick={() => setCustomModal({ isOpen: false, type: '', categoryTarget: '', name: '' })} className="text-slate-400 hover:text-white transition-colors bg-slate-800 p-1 rounded-full"><X className="w-4 h-4"/></button>
-                </div>
-                
-                <form onSubmit={handleAddCustomItemSubmit} className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-1">
-                      {customModal.type === 'origem' && 'Nome da Categoria'}
-                      {customModal.type === 'classificacao' && 'Nome da Sub-classificação'}
-                      {customModal.type === 'conta' && 'Nome da Conta / Instituição'}
-                    </label>
-                    <input 
-                      type="text" 
-                      required 
-                      autoFocus
-                      placeholder="Digite o nome..." 
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                      value={customModal.name} 
-                      onChange={e => setCustomModal({...customModal, name: e.target.value})} 
-                    />
-                  </div>
-
-                  <div className="pt-2 flex justify-end gap-3">
-                    <button type="button" onClick={() => setCustomModal({ isOpen: false, type: '', categoryTarget: '', name: '' })} className="px-4 py-2 text-xs text-slate-300 hover:text-white">Cancelar</button>
-                    <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-lg shadow-indigo-600/20">
-                      <Save className="w-3.5 h-3.5" /> Salvar
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* CUSTOM CONFIRM MODAL */}
+          {/* MODAL DE CONFIRMAÇÃO */}
           {confirmModal.isOpen && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-6 shadow-2xl">
-                <div className="flex items-center gap-3 mb-4 text-rose-400">
-                  <AlertTriangle className="w-6 h-6" />
-                  <h3 className="text-lg font-bold">{confirmModal.title}</h3>
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+              <div className="bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl w-full max-w-sm overflow-hidden flex flex-col p-6 space-y-4">
+                <div className="flex items-center gap-3 text-amber-400">
+                  <AlertTriangle className="w-6 h-6 shrink-0" />
+                  <h3 className="font-bold text-base text-white">{confirmModal.title}</h3>
                 </div>
-                <p className="text-slate-300 text-sm mb-6">{confirmModal.message}</p>
-                <div className="flex justify-end gap-3">
-                  <button onClick={() => setConfirmModal({ isOpen: false })} className="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white transition-colors">
-                    Cancelar
-                  </button>
-                  <button onClick={confirmModal.onConfirm} className="px-4 py-2 text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors shadow-lg shadow-rose-600/20">
-                    Confirmar Exclusão
-                  </button>
+                <p className="text-xs text-slate-300">{confirmModal.message}</p>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button onClick={() => setConfirmModal({ isOpen: false })} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancelar</button>
+                  <button onClick={confirmModal.onConfirm} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-xs font-semibold">Confirmar</button>
                 </div>
               </div>
             </div>
@@ -2054,11 +2228,11 @@
 
           {/* TOAST NOTIFICATION */}
           {toast && (
-            <div className="fixed bottom-6 right-6 z-[100]">
-              <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border ${toast.type === 'success' ? 'bg-emerald-950/80 border-emerald-500/30 text-emerald-100' : 'bg-rose-950/80 border-rose-500/30 text-rose-100'} backdrop-blur-md`}>
-                {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
-                <p className="text-sm font-medium">{toast.message}</p>
-              </div>
+            <div className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-semibold border backdrop-blur animate-bounce ${
+              toast.type === 'error' ? 'bg-rose-950/90 border-rose-500/50 text-rose-200' : 'bg-slate-900/90 border-indigo-500/50 text-indigo-200'
+            }`}>
+              {toast.type === 'error' ? <AlertTriangle className="w-4 h-4 text-rose-400" /> : <CheckCircle2 className="w-4 h-4 text-indigo-400" />}
+              {toast.message}
             </div>
           )}
         </div>
