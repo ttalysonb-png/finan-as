@@ -48,6 +48,7 @@ ADD COLUMN IF NOT EXISTS fixed_installment_id BIGINT;
 CREATE TABLE IF NOT EXISTS public.fixed_accounts (
     id BIGSERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
+    natureza TEXT NOT NULL DEFAULT 'despesa', -- 'despesa' (despesa fixa) ou 'receita' (previsão de receita)
     origem TEXT NOT NULL DEFAULT 'Infraestrutura',
     classificacao TEXT DEFAULT 'Geral',
     conta TEXT NOT NULL DEFAULT 'Conta Talyson',
@@ -63,6 +64,10 @@ CREATE TABLE IF NOT EXISTS public.fixed_accounts (
     observacao TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Garante que a coluna natureza exista mesmo se a tabela já foi criada anteriormente
+ALTER TABLE public.fixed_accounts 
+ADD COLUMN IF NOT EXISTS natureza TEXT NOT NULL DEFAULT 'despesa';
 
 -- 3. Tabela de Lançamentos Mensais das Contas Fixas (Parcelas / Meses)
 CREATE TABLE IF NOT EXISTS public.fixed_account_installments (

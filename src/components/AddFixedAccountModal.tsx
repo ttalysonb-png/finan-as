@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, DollarSign, Layers, PlusCircle, CreditCard, Sparkles } from 'lucide-react';
-import { FixedAccount, Card } from '../types';
+import {
+  X, Calendar, DollarSign, Layers, PlusCircle, CreditCard, Sparkles,
+  TrendingDown, TrendingUp
+} from 'lucide-react';
+import { FixedAccount, FixedAccountNature, Card } from '../types';
 import { MONTHS, addMonthsToPeriod } from '../constants';
 
 interface AddFixedAccountModalProps {
@@ -12,6 +15,7 @@ interface AddFixedAccountModalProps {
   cards: Card[];
   selectedPeriodKey: string;
   accountToEdit?: FixedAccount | null;
+  initialNatureza?: FixedAccountNature;
   onOpenCustomModal: (type: 'origem' | 'classificacao' | 'conta', categoryTarget?: string) => void;
 }
 
@@ -24,8 +28,10 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
   cards,
   selectedPeriodKey,
   accountToEdit,
+  initialNatureza = 'despesa',
   onOpenCustomModal
 }) => {
+  const [natureza, setNatureza] = useState<FixedAccountNature>(initialNatureza);
   const [nome, setNome] = useState('');
   const [origem, setOrigem] = useState('Infraestrutura');
   const [classificacao, setClassificacao] = useState('Aluguel');
@@ -45,6 +51,7 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
   // Inicializa com dados para edição ou criação
   useEffect(() => {
     if (accountToEdit) {
+      setNatureza(accountToEdit.natureza || 'despesa');
       setNome(accountToEdit.nome);
       setOrigem(accountToEdit.origem);
       setClassificacao(accountToEdit.classificacao || (categoriesMap[accountToEdit.origem]?.[0] || 'Geral'));
@@ -70,9 +77,18 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
         generateMonthlyList(accountToEdit.mesInicio || selectedPeriodKey, accountToEdit.mesesDuracao || 12, accountToEdit.valorPadrao || 0);
       }
     } else {
+      setNatureza(initialNatureza || 'despesa');
       setNome('');
-      setOrigem(Object.keys(categoriesMap)[0] || 'Infraestrutura');
-      setClassificacao((categoriesMap[Object.keys(categoriesMap)[0]] || ['Aluguel'])[0]);
+      setOrigem(
+        (initialNatureza === 'receita' && categoriesMap['Receita'])
+          ? 'Receita'
+          : Object.keys(categoriesMap)[0] || 'Infraestrutura'
+      );
+      setClassificacao(
+        (initialNatureza === 'receita' && categoriesMap['Receita'])
+          ? categoriesMap['Receita'][0] || 'Salário'
+          : (categoriesMap[Object.keys(categoriesMap)[0]] || ['Aluguel'])[0]
+      );
       setConta(accounts[0] || 'Conta Talyson');
       setIndividuo('Ambos');
       setDiaVencimento('10');
@@ -143,8 +159,9 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
       mesesDuracao: totalMonths,
       tipoValor,
       valorPadrao: parsedValPadrao,
-      isCartao,
-      cartaoId: isCartao && cartaoId ? parseInt(cartaoId, 10) : null,
+      isCartao: natureza === 'despesa' ? isCartao : false,
+      cartaoId: natureza === 'despesa' && isCartao && cartaoId ? parseInt(cartaoId, 10) : null,
+      natureza,
       observacao: observacao.trim(),
       ativo: true
     };
@@ -171,20 +188,30 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isReceita = natureza === 'receita';
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 my-8">
+      <div className={`bg-slate-900 border ${
+        isReceita ? 'border-emerald-500/30' : 'border-indigo-500/30'
+      } rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 my-8`}>
         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-              <PlusCircle className="w-5 h-5" />
+            <div className={`p-2 rounded-lg ${
+              isReceita ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'
+            }`}>
+              {isReceita ? <TrendingUp className="w-5 h-5" /> : <PlusCircle className="w-5 h-5" />}
             </div>
             <div>
               <h3 className="text-base font-bold text-white">
-                {accountToEdit ? 'Editar Conta Fixa' : 'Cadastrar Nova Conta Fixa / Recorrente'}
+                {accountToEdit
+                  ? isReceita ? 'Editar Previsão de Receita' : 'Editar Conta Fixa'
+                  : isReceita ? 'Cadastrar Previsão de Receita' : 'Cadastrar Nova Conta Fixa / Recorrente'}
               </h3>
               <p className="text-xs text-slate-400">
-                Configure os meses de vigência e defina se os valores são fixos ou variáveis
+                {isReceita
+                  ? 'Cadastre receitas previsíveis e recorrentes (salário, pro-labore, aluguel recebido) com baixa direta no histórico'
+                  : 'Configure despesas fixas com vigência em meses, controle de vencimentos e baixa no histórico'}
               </p>
             </div>
           </div>
@@ -194,19 +221,64 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Seletor de Natureza: Despesa Fixa vs Previsão de Receita */}
+          <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setNatureza('despesa');
+                if (origem === 'Trabalho' || origem === 'Investimentos') {
+                  const firstExpenseCat = Object.keys(categoriesMap).find(k => k !== 'Trabalho' && k !== 'Investimentos') || Object.keys(categoriesMap)[0];
+                  setOrigem(firstExpenseCat);
+                  setClassificacao(categoriesMap[firstExpenseCat]?.[0] || 'Geral');
+                }
+              }}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                !isReceita
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <TrendingDown className="w-4 h-4 text-rose-400" />
+              <span>Despesa Fixa (A Pagar)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNatureza('receita');
+                setIsCartao(false);
+                setCartaoId('');
+                const targetCat = Object.keys(categoriesMap).find(c => c.toLowerCase().includes('trabalho') || c.toLowerCase().includes('receita')) || Object.keys(categoriesMap)[0];
+                setOrigem(targetCat);
+                setClassificacao(categoriesMap[targetCat]?.[0] || 'Salário');
+              }}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                isReceita
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              <span>Previsão de Receita (A Receber)</span>
+            </button>
+          </div>
+
           {/* Nome e Origem */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Nome da Conta Fixa *
+                {isReceita ? 'Nome da Receita Prevista *' : 'Nome da Conta Fixa *'}
               </label>
               <input
                 type="text"
                 required
                 value={nome}
                 onChange={e => setNome(e.target.value)}
-                placeholder="Ex: Aluguel, Internet, Academia, Energia..."
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                placeholder={isReceita ? 'Ex: Salário Mensal, Pró-Labore, Aluguel Recebido, Dividendos...' : 'Ex: Aluguel, Internet, Academia, Energia...'}
+                className={`w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none ${
+                  isReceita ? 'focus:border-emerald-500' : 'focus:border-indigo-500'
+                }`}
               />
             </div>
 
@@ -262,7 +334,7 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
 
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Conta de Débito Padrão
+                {isReceita ? 'Conta de Destino (Onde Receber)' : 'Conta de Débito Padrão'}
               </label>
               <select
                 value={conta}
@@ -299,11 +371,11 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
             </div>
           </div>
 
-          {/* Vencimento e Duração de Meses */}
+          {/* Vencimento/Recebimento e Duração de Meses */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl">
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Dia do Vencimento (1 a 31)
+                {isReceita ? 'Dia do Recebimento (1 a 31)' : 'Dia do Vencimento (1 a 31)'}
               </label>
               <input
                 type="number"
@@ -345,7 +417,7 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
                 }}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
               >
-                <option value="1">1 mês (Única parcela)</option>
+                <option value="1">1 mês (Lançamento único)</option>
                 <option value="3">3 meses (Trimestral)</option>
                 <option value="6">6 meses (Semestral)</option>
                 <option value="12">12 meses (1 Ano)</option>
@@ -356,52 +428,54 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
             </div>
           </div>
 
-          {/* Integração com Fatura de Cartão */}
-          <div className="p-3 bg-purple-950/20 border border-purple-500/30 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-purple-200 flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isCartao}
-                  onChange={e => setIsCartao(e.target.checked)}
-                  className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
-                />
-                <CreditCard className="w-4 h-4 text-purple-400" />
-                Esta conta representa a Fatura de um Cartão de Crédito?
-              </label>
-            </div>
-
-            {isCartao && (
-              <div className="pt-2">
-                <label className="text-xs text-purple-300 block mb-1">
-                  Vincular ao Cartão de Crédito Cadastrado:
+          {/* Integração com Fatura de Cartão (Apenas para Despesas Fixas) */}
+          {!isReceita && (
+            <div className="p-3 bg-purple-950/20 border border-purple-500/30 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-purple-200 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isCartao}
+                    onChange={e => setIsCartao(e.target.checked)}
+                    className="w-4 h-4 accent-purple-500 rounded cursor-pointer"
+                  />
+                  <CreditCard className="w-4 h-4 text-purple-400" />
+                  Esta conta representa a Fatura de um Cartão de Crédito?
                 </label>
-                <select
-                  value={cartaoId}
-                  onChange={e => {
-                    const cId = e.target.value;
-                    setCartaoId(cId);
-                    const found = cards.find(c => String(c.id) === cId);
-                    if (found && !nome) {
-                      setNome(`Fatura ${found.nome}`);
-                    }
-                    if (found) {
-                      setDiaVencimento(String(found.diaVencimento || 10));
-                    }
-                  }}
-                  className="w-full bg-slate-950 border border-purple-500/50 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
-                >
-                  <option value="">Selecione um cartão (ou deixe geral)...</option>
-                  {cards.map(c => (
-                    <option key={c.id} value={c.id}>{c.nome} (Titular: {c.titular})</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-purple-400 mt-1">
-                  O valor da fatura do mês poderá ser sincronizado automaticamente com os gastos daquele período.
-                </p>
               </div>
-            )}
-          </div>
+
+              {isCartao && (
+                <div className="pt-2">
+                  <label className="text-xs text-purple-300 block mb-1">
+                    Vincular ao Cartão de Crédito Cadastrado:
+                  </label>
+                  <select
+                    value={cartaoId}
+                    onChange={e => {
+                      const cId = e.target.value;
+                      setCartaoId(cId);
+                      const found = cards.find(c => String(c.id) === cId);
+                      if (found && !nome) {
+                        setNome(`Fatura ${found.nome}`);
+                      }
+                      if (found) {
+                        setDiaVencimento(String(found.diaVencimento || 10));
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-purple-500/50 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                  >
+                    <option value="">Selecione um cartão (ou deixe geral)...</option>
+                    {cards.map(c => (
+                      <option key={c.id} value={c.id}>{c.nome} (Titular: {c.titular})</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-purple-400 mt-1">
+                    O valor da fatura do mês poderá ser sincronizado automaticamente com os gastos daquele período.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Escolha do Regime de Valores: Fixos ou Diferentes por Mês */}
           <div className="space-y-3 p-4 bg-slate-950/70 border border-indigo-500/20 rounded-xl">
@@ -554,9 +628,17 @@ export const AddFixedAccountModal: React.FC<AddFixedAccountModalProps> = ({
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold rounded-lg text-white shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2"
+              className={`px-5 py-2 disabled:opacity-50 text-xs font-semibold rounded-lg text-white shadow-lg transition-all flex items-center gap-2 ${
+                isReceita
+                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                  : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
+              }`}
             >
-              {saving ? 'Salvando...' : accountToEdit ? 'Atualizar Conta Fixa' : 'Cadastrar Conta Fixa'}
+              {saving
+                ? 'Salvando...'
+                : accountToEdit
+                ? isReceita ? 'Atualizar Previsão de Receita' : 'Atualizar Conta Fixa'
+                : isReceita ? 'Cadastrar Previsão de Receita' : 'Cadastrar Conta Fixa'}
             </button>
           </div>
         </form>

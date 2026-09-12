@@ -52,6 +52,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
 
   const [year, month] = installment.periodo.split('-');
   const monthName = MONTHS[parseInt(month, 10) - 1] || installment.periodo;
+  const isReceita = account.natureza === 'receita';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,14 +76,22 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+      <div className={`bg-slate-900 border ${
+        isReceita ? 'border-emerald-500/50' : 'border-indigo-500/40'
+      } rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5`}>
         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+            <div className={`p-2.5 rounded-xl border ${
+              isReceita
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
+            }`}>
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Registrar Pagamento</h3>
+              <h3 className="text-base font-bold text-white">
+                {isReceita ? 'Registrar Recebimento de Receita' : 'Registrar Pagamento'}
+              </h3>
               <p className="text-xs text-slate-400">
                 {account.nome} — Parcela {installment.numeroParcela}/{installment.totalParcelas} ({monthName}/{year})
               </p>
@@ -96,7 +105,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
         {/* Resumo do Lançamento */}
         <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-1.5">
           <div className="flex justify-between text-slate-400">
-            <span>Vencimento Previsto:</span>
+            <span>{isReceita ? 'Data Prevista:' : 'Vencimento Previsto:'}</span>
             <span className="font-mono text-slate-200">{installment.dataVencimento.split('-').reverse().join('/')}</span>
           </div>
           <div className="flex justify-between text-slate-400">
@@ -113,7 +122,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Data do Pagamento *
+                {isReceita ? 'Data do Recebimento *' : 'Data do Pagamento *'}
               </label>
               <input
                 type="date"
@@ -126,7 +135,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
 
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Valor Efetivo Pago (R$) *
+                {isReceita ? 'Valor Efetivo Recebido (R$) *' : 'Valor Efetivo Pago (R$) *'}
               </label>
               <input
                 type="number"
@@ -142,7 +151,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Conta Debitada *
+                {isReceita ? 'Conta de Destino (Onde Caiu) *' : 'Conta Debitada *'}
               </label>
               <select
                 value={contaPagamento}
@@ -157,14 +166,14 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
 
             <div>
               <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Forma de Pagamento
+                Forma de Operação
               </label>
               <select
                 value={operacao}
                 onChange={e => setOperacao(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
               >
-                {['Pix', 'Boleto', 'Débito', 'Transferência', 'Dinheiro', 'Crédito'].map(op => (
+                {['Pix', 'Transferência', 'Boleto', 'Débito', 'Dinheiro', 'Crédito'].map(op => (
                   <option key={op} value={op}>{op}</option>
                 ))}
               </select>
@@ -179,7 +188,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
               type="text"
               value={observacao}
               onChange={e => setObservacao(e.target.value)}
-              placeholder="Ex: Pago com desconto, pago adiantado..."
+              placeholder={isReceita ? 'Ex: Recebido com bônus, adiantamento quinzenal...' : 'Ex: Pago com desconto, pago adiantado...'}
               className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
             />
           </div>
@@ -187,7 +196,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
           <div className="p-2.5 bg-emerald-950/30 border border-emerald-500/20 rounded-lg text-[11px] text-emerald-300 flex items-center gap-2">
             <FileText className="w-4 h-4 shrink-0 text-emerald-400" />
             <span>
-              Ao confirmar, este pagamento será registrado automaticamente no <strong>Histórico de Lançamentos</strong> e debitado do saldo da conta.
+              Ao confirmar, este {isReceita ? 'recebimento' : 'pagamento'} será registrado automaticamente no <strong>Histórico de Lançamentos</strong> e {isReceita ? 'somado ao saldo (Entrada)' : 'debitado do saldo (Saída)'}.
             </span>
           </div>
 
@@ -204,7 +213,7 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
               disabled={submitting}
               className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-semibold rounded-lg text-white shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-2"
             >
-              {submitting ? 'Registrando...' : 'Confirmar Pagamento'}
+              {submitting ? 'Registrando...' : isReceita ? 'Confirmar Recebimento' : 'Confirmar Pagamento'}
             </button>
           </div>
         </form>

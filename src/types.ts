@@ -32,6 +32,7 @@ export interface Budget {
 }
 
 export type FixedAccountType = 'fixo' | 'variavel';
+export type FixedAccountNature = 'despesa' | 'receita';
 export type PaymentStatus = 'pendente' | 'pago' | 'atrasado';
 
 export interface FixedAccount {
@@ -49,6 +50,7 @@ export interface FixedAccount {
   cartaoId?: number | null;
   individuo: string;
   ativo: boolean;
+  natureza?: FixedAccountNature; // 'despesa' | 'receita' (default: 'despesa')
   observacao?: string;
   installments?: FixedAccountInstallment[];
 }

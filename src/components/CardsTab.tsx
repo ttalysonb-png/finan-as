@@ -54,6 +54,8 @@ export const CardsTab: React.FC<CardsTabProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {cards.map(card => {
           const invoiceValue = getCardInvoice(card.id, card.faturaAtual);
+          const availableLimit = Math.max(0, card.limite - invoiceValue);
+          const percentUsed = card.limite > 0 ? Math.min(100, (invoiceValue / card.limite) * 100) : 0;
           const isSelectedCard = selectedCardForDetails && selectedCardForDetails.id === card.id;
 
           return (
@@ -61,7 +63,7 @@ export const CardsTab: React.FC<CardsTabProps> = ({
               key={card.id}
               className={`bg-gradient-to-br ${
                 card.cor || 'from-indigo-600 to-purple-800'
-              } rounded-2xl p-6 text-white shadow-xl flex flex-col justify-between h-52 relative overflow-hidden group border-2 transition-all ${
+              } rounded-2xl p-6 text-white shadow-xl flex flex-col justify-between min-h-[240px] relative overflow-hidden group border-2 transition-all ${
                 isSelectedCard ? 'border-white ring-4 ring-purple-500/30' : 'border-transparent'
               }`}
             >
@@ -92,19 +94,56 @@ export const CardsTab: React.FC<CardsTabProps> = ({
                 </div>
               </div>
 
-              <div className="relative z-10 my-auto">
-                <span className="text-[10px] text-white/70 block">
-                  Fatura Atual ({MONTHS[selectedMonth - 1]})
-                </span>
-                <span className="text-2xl font-extrabold tracking-tight">
-                  R$ {invoiceValue.toFixed(2)}
-                </span>
+              {/* Valores Principais: Fatura e Limite Disponível */}
+              <div className="relative z-10 my-auto py-2">
+                <div className="flex items-end justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] text-white/70 block">
+                      Fatura Atual ({MONTHS[selectedMonth - 1]})
+                    </span>
+                    <span className="text-2xl font-extrabold tracking-tight">
+                      R$ {invoiceValue.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-emerald-200 font-semibold block uppercase tracking-wider">
+                      Valor Disponível
+                    </span>
+                    <span className={`text-xl font-black tracking-tight ${
+                      availableLimit <= 0 ? 'text-rose-300' : 'text-emerald-300'
+                    }`}>
+                      R$ {availableLimit.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Barra de Progresso do Limite Utilizado */}
+                <div className="mt-3">
+                  <div className="flex justify-between text-[10px] text-white/80 font-medium mb-1">
+                    <span>Uso do Limite</span>
+                    <span>{percentUsed.toFixed(0)}% utilizado</span>
+                  </div>
+                  <div className="w-full bg-black/30 backdrop-blur rounded-full h-2 overflow-hidden p-0.5 border border-white/15">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        percentUsed >= 90
+                          ? 'bg-rose-400'
+                          : percentUsed >= 70
+                          ? 'bg-amber-400'
+                          : 'bg-emerald-400'
+                      }`}
+                      style={{ width: `${percentUsed}%` }}
+                    ></div>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex justify-between items-end text-xs text-white/80 relative z-10 border-t border-white/10 pt-3">
+              {/* Rodapé do Card */}
+              <div className="flex justify-between items-end text-xs text-white/80 relative z-10 border-t border-white/10 pt-2.5">
                 <div>
                   <span className="text-[9px] block text-white/60">Limite Total</span>
-                  <span className="font-semibold">R$ {card.limite.toFixed(2)}</span>
+                  <span className="font-semibold text-sm">R$ {card.limite.toFixed(2)}</span>
                 </div>
                 <div className="text-right">
                   <span className="text-[9px] block text-white/60">Fech. / Venc.</span>

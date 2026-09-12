@@ -7,7 +7,7 @@ import {
 import { supabase } from './lib/supabase';
 import {
   Transaction, Card, Budget, FixedAccount, FixedAccountInstallment,
-  ActiveTab, PaymentStatus
+  ActiveTab, PaymentStatus, FixedAccountNature
 } from './types';
 import {
   MONTHS, DEFAULT_CATEGORIES_MAP, addMonthsToDate, addMonthsToPeriod,
@@ -76,6 +76,7 @@ export default function App() {
   const [showMigrationsModal, setShowMigrationsModal] = useState(false);
   const [showAddFixedAccountModal, setShowAddFixedAccountModal] = useState(false);
   const [accountToEdit, setAccountToEdit] = useState<FixedAccount | null>(null);
+  const [addFixedInitialNatureza, setAddFixedInitialNatureza] = useState<FixedAccountNature>('despesa');
 
   const [showPayModal, setShowPayModal] = useState(false);
   const [payingAccount, setPayingAccount] = useState<FixedAccount | null>(null);
@@ -229,6 +230,7 @@ export default function App() {
             individuo: fa.individuo,
             ativo: fa.ativo,
             observacao: fa.observacao,
+            natureza: fa.natureza || 'despesa',
             installments: (fa.fixed_account_installments || []).map((inst: any) => ({
               id: inst.id,
               fixedAccountId: inst.fixed_account_id,
@@ -998,6 +1000,7 @@ export default function App() {
 
       const accountPayload = {
         nome: accountData.nome,
+        natureza: accountData.natureza || 'despesa',
         origem: accountData.origem,
         classificacao: accountData.classificacao,
         conta: accountData.conta,
@@ -1079,10 +1082,12 @@ export default function App() {
         console.warn('Parcelas salvas em cache local:', instErr);
       }
 
+      const isReceita = (accountData.natureza || 'despesa') === 'receita';
       const completeAccount: FixedAccount = {
         id: createdId,
         nome: accountData.nome || '',
-        origem: accountData.origem || 'Infraestrutura',
+        natureza: accountData.natureza || 'despesa',
+        origem: accountData.origem || (isReceita ? 'Receita' : 'Infraestrutura'),
         classificacao: accountData.classificacao || 'Geral',
         conta: accountData.conta || 'Conta Talyson',
         valorPadrao: accountData.valorPadrao || 0,
@@ -1106,20 +1111,27 @@ export default function App() {
         return next;
       });
 
-      showToast(isEditing ? 'Conta fixa atualizada com sucesso!' : 'Conta fixa cadastrada com sucesso!');
+      showToast(
+        isEditing
+          ? isReceita ? 'Previsão de receita atualizada!' : 'Conta fixa atualizada!'
+          : isReceita ? 'Previsão de receita cadastrada com sucesso!' : 'Conta fixa cadastrada com sucesso!'
+      );
       setAccountToEdit(null);
     } catch (err) {
       console.error('Erro ao salvar conta fixa:', err);
-      showToast('Erro ao salvar a conta fixa.', 'error');
+      showToast('Erro ao salvar o registro.', 'error');
     }
   };
 
   const handleDeleteFixedAccount = (accountId: number) => {
+    const target = fixedAccounts.find(a => a.id === accountId);
+    const isReceita = target?.natureza === 'receita';
     setConfirmModal({
       isOpen: true,
-      title: 'Excluir Conta Fixa',
-      message:
-        'Tem certeza que deseja excluir esta conta fixa e todas as parcelas programadas? Lançamentos já quitados permanecerão no histórico.',
+      title: isReceita ? 'Excluir Previsão de Receita' : 'Excluir Conta Fixa',
+      message: isReceita
+        ? 'Tem certeza que deseja excluir esta previsão de receita e todos os meses previstos? Lançamentos já recebidos permanecerão no histórico.'
+        : 'Tem certeza que deseja excluir esta conta fixa e todas as parcelas programadas? Lançamentos já quitados permanecerão no histórico.',
       onConfirm: async () => {
         setFixedAccounts(prev => {
           const next = prev.filter(a => a.id !== accountId);
@@ -1133,13 +1145,13 @@ export default function App() {
           console.warn('Erro ao deletar no Supabase:', e);
         }
 
-        showToast('Conta fixa excluída com sucesso.');
+        showToast(isReceita ? 'Previsão de receita excluída.' : 'Conta fixa excluída com sucesso.');
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
       }
     });
   };
 
-  // REGISTRAR PAGAMENTO E LANÇAR NO HISTÓRICO PRINCIPAL AUTOMATICAMENTE!
+  // REGISTRAR PAGAMENTO OU RECEBIMENTO E LANÇAR NO HISTÓRICO PRINCIPAL AUTOMATICAMENTE!
   const handleConfirmPayment = async (
     account: FixedAccount,
     installment: FixedAccountInstallment,
@@ -1152,16 +1164,18 @@ export default function App() {
     }
   ) => {
     try {
+      const isReceita = account.natureza === 'receita';
+
       // 1. Cria o Lançamento na tabela `transactions` do histórico
       const txPayload = {
         data: paymentDetails.dataPagamento,
         origem: account.origem,
-        classificacao: account.classificacao || 'Conta Fixa',
+        classificacao: account.classificacao || (isReceita ? 'Receita Fixa' : 'Conta Fixa'),
         conta: paymentDetails.contaPagamento,
         cartao_id: account.cartaoId || null,
-        entrada: 0,
-        saida: paymentDetails.valorPago,
-        comentario: `Pagamento Conta Fixa: ${account.nome} (${installment.numeroParcela}/${installment.totalParcelas})${
+        entrada: isReceita ? paymentDetails.valorPago : 0,
+        saida: isReceita ? 0 : paymentDetails.valorPago,
+        comentario: `${isReceita ? 'Recebimento de Receita' : 'Pagamento Conta Fixa'}: ${account.nome} (${installment.numeroParcela}/${installment.totalParcelas})${
           paymentDetails.observacao ? ` - ${paymentDetails.observacao}` : ''
         }`,
         individuo: account.individuo,
@@ -1186,8 +1200,8 @@ export default function App() {
             classificacao: txCreated.classificacao,
             conta: txCreated.conta,
             cartaoId: txCreated.cartao_id,
-            entrada: 0,
-            saída: Number(txCreated.saida),
+            entrada: Number(txCreated.entrada) || 0,
+            saída: Number(txCreated.saida) || 0,
             comentario: txCreated.comentario,
             individuo: txCreated.individuo,
             operacao: txCreated.operacao,
@@ -1203,8 +1217,8 @@ export default function App() {
             classificacao: txPayload.classificacao,
             conta: txPayload.conta,
             cartaoId: txPayload.cartao_id,
-            entrada: 0,
-            saída: txPayload.saida,
+            entrada: isReceita ? txPayload.entrada : 0,
+            saída: isReceita ? 0 : txPayload.saida,
             comentario: txPayload.comentario,
             individuo: txPayload.individuo,
             operacao: txPayload.operacao,
@@ -1259,19 +1273,26 @@ export default function App() {
         console.warn('Atualização da parcela salva em cache local');
       }
 
-      showToast(`Pagamento de "${account.nome}" registrado com sucesso no Histórico!`);
+      showToast(
+        isReceita
+          ? `Recebimento de "${account.nome}" registrado com sucesso no Histórico!`
+          : `Pagamento de "${account.nome}" registrado com sucesso no Histórico!`
+      );
     } catch (err) {
-      console.error('Erro ao registrar pagamento:', err);
-      showToast('Erro ao registrar o pagamento.', 'error');
+      console.error('Erro ao registrar:', err);
+      showToast('Erro ao processar o registro.', 'error');
     }
   };
 
-  // Reverter pagamento
+  // Reverter pagamento ou recebimento
   const handleRevertPayment = async (account: FixedAccount, installment: FixedAccountInstallment) => {
+    const isReceita = account.natureza === 'receita';
     setConfirmModal({
       isOpen: true,
-      title: 'Desmarcar Pagamento',
-      message: `Deseja desmarcar o pagamento de "${account.nome}"? O lançamento correspondente será removido do Histórico e o saldo será estornado.`,
+      title: isReceita ? 'Desmarcar Recebimento' : 'Desmarcar Pagamento',
+      message: isReceita
+        ? `Deseja desmarcar o recebimento de "${account.nome}"? O lançamento correspondente será removido do Histórico e o saldo da conta será ajustado.`
+        : `Deseja desmarcar o pagamento de "${account.nome}"? O lançamento correspondente será removido do Histórico e o saldo será estornado.`,
       onConfirm: async () => {
         // Remove a transação associada do histórico se houver
         if (installment.transactionId) {
@@ -1596,7 +1617,8 @@ export default function App() {
               selectedMonth={selectedMonth}
               selectedPeriodKey={selectedPeriodKey}
               getCardInvoice={getCardInvoice}
-              onOpenAddModal={() => {
+              onOpenAddModal={(initialNature = 'despesa') => {
+                setAddFixedInitialNatureza(initialNature);
                 setAccountToEdit(null);
                 setShowAddFixedAccountModal(true);
               }}
@@ -1689,6 +1711,7 @@ export default function App() {
         cards={cards}
         selectedPeriodKey={selectedPeriodKey}
         accountToEdit={accountToEdit}
+        initialNatureza={addFixedInitialNatureza}
         onOpenCustomModal={(type, target) =>
           setCustomModal({ isOpen: true, type, categoryTarget: target || '', name: '' })
         }

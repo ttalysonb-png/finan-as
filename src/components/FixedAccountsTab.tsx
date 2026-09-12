@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import {
   Calendar, CheckCircle2, Clock, AlertCircle, Plus, Edit3, Trash2,
   DollarSign, CreditCard, Filter, Search, RotateCcw, Check, ArrowRight,
-  Database, RefreshCw, FileText, ChevronRight, Layers, Eye
+  Database, RefreshCw, FileText, ChevronRight, Layers, Eye,
+  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Wallet
 } from 'lucide-react';
-import { FixedAccount, FixedAccountInstallment, Card, PaymentStatus } from '../types';
+import { FixedAccount, FixedAccountInstallment, Card, PaymentStatus, FixedAccountNature } from '../types';
 import { MONTHS, formatCurrency } from '../constants';
 
 interface FixedAccountsTabProps {
@@ -14,7 +15,7 @@ interface FixedAccountsTabProps {
   selectedMonth: number;
   selectedPeriodKey: string;
   getCardInvoice: (cardId: number, baseValue: number) => number;
-  onOpenAddModal: () => void;
+  onOpenAddModal: (initialNature?: FixedAccountNature) => void;
   onEditAccount: (account: FixedAccount) => void;
   onDeleteAccount: (accountId: number) => void;
   onOpenPayModal: (account: FixedAccount, installment: FixedAccountInstallment) => void;
@@ -40,7 +41,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
   onOpenMigrationsModal,
   onSyncCardInvoicesToFixedAccounts
 }) => {
-  const [statusFilter, setStatusFilter] = useState<'all' | PaymentStatus | 'cartao'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'despesa' | 'receita' | PaymentStatus | 'cartao'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingInstallmentId, setEditingInstallmentId] = useState<number | string | null>(null);
   const [editingValueInput, setEditingValueInput] = useState<string>('');
@@ -48,7 +49,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Coleta as parcelas das contas fixas para o período atual
+  // Coleta as parcelas/meses das contas fixas e previsões para o período atual
   const monthlyItems = useMemo(() => {
     const list: { account: FixedAccount; installment: FixedAccountInstallment }[] = [];
 
@@ -56,9 +57,9 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
       if (!acc.ativo) return;
       const inst = acc.installments?.find(i => i.periodo === selectedPeriodKey);
       if (inst) {
-        // Checa se está atrasado (se pendente e vencimento < hoje)
+        // Checa se está atrasado (se pendente, despesa e vencimento < hoje)
         let computedStatus = inst.status;
-        if (computedStatus === 'pendente' && inst.dataVencimento < todayStr) {
+        if (computedStatus === 'pendente' && inst.dataVencimento < todayStr && acc.natureza !== 'receita') {
           computedStatus = 'atrasado';
         }
 
@@ -75,30 +76,63 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
     return list;
   }, [fixedAccounts, selectedPeriodKey, todayStr]);
 
-  // Cálculos de totais
-  const totalPrevisto = useMemo(() => {
-    return monthlyItems.reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
-  }, [monthlyItems]);
+  // Separação entre Despesas Fixas e Previsões de Receita
+  const despesasItems = useMemo(
+    () => monthlyItems.filter(item => item.account.natureza !== 'receita'),
+    [monthlyItems]
+  );
 
-  const totalPago = useMemo(() => {
-    return monthlyItems
+  const receitasItems = useMemo(
+    () => monthlyItems.filter(item => item.account.natureza === 'receita'),
+    [monthlyItems]
+  );
+
+  // Cálculos de Despesas
+  const totalDespesasPrevisto = useMemo(() => {
+    return despesasItems.reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+  }, [despesasItems]);
+
+  const totalDespesasPago = useMemo(() => {
+    return despesasItems
       .filter(item => item.installment.status === 'pago')
       .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
-  }, [monthlyItems]);
+  }, [despesasItems]);
 
-  const totalPendente = useMemo(() => {
-    return monthlyItems
+  const totalDespesasPendente = useMemo(() => {
+    return despesasItems
       .filter(item => item.installment.status === 'pendente')
       .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
-  }, [monthlyItems]);
+  }, [despesasItems]);
 
-  const totalAtrasado = useMemo(() => {
-    return monthlyItems
+  const totalDespesasAtrasado = useMemo(() => {
+    return despesasItems
       .filter(item => item.installment.status === 'atrasado')
       .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
-  }, [monthlyItems]);
+  }, [despesasItems]);
 
-  const percentPago = totalPrevisto > 0 ? (totalPago / totalPrevisto) * 100 : 0;
+  // Cálculos de Receitas
+  const totalReceitasPrevisto = useMemo(() => {
+    return receitasItems.reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+  }, [receitasItems]);
+
+  const totalReceitasRecebido = useMemo(() => {
+    return receitasItems
+      .filter(item => item.installment.status === 'pago')
+      .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+  }, [receitasItems]);
+
+  const totalReceitasPendente = useMemo(() => {
+    return receitasItems
+      .filter(item => item.installment.status === 'pendente')
+      .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+  }, [receitasItems]);
+
+  // Saldos
+  const saldoPrevisto = totalReceitasPrevisto - totalDespesasPrevisto;
+  const saldoRealizado = totalReceitasRecebido - totalDespesasPago;
+
+  const percentDespesasPago = totalDespesasPrevisto > 0 ? (totalDespesasPago / totalDespesasPrevisto) * 100 : 0;
+  const percentReceitasRecebido = totalReceitasPrevisto > 0 ? (totalReceitasRecebido / totalReceitasPrevisto) * 100 : 0;
 
   // Filtragem da lista
   const filteredItems = useMemo(() => {
@@ -111,6 +145,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
       if (!matchSearch) return false;
 
       if (statusFilter === 'all') return true;
+      if (statusFilter === 'despesa') return item.account.natureza !== 'receita';
+      if (statusFilter === 'receita') return item.account.natureza === 'receita';
       if (statusFilter === 'cartao') return !!item.account.isCartao;
       return item.installment.status === statusFilter;
     });
@@ -134,10 +170,10 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
             <Calendar className="w-6 h-6 text-indigo-400" />
-            Contas Fixas & Recorrentes — {MONTHS[selectedMonth - 1]} / {selectedYear}
+            Contas Fixas & Previsões — {MONTHS[selectedMonth - 1]} / {selectedYear}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Controle de vencimentos, duração em meses, status de quitação e baixa integrada ao histórico financeiro.
+            Planejamento de receitas previstas, despesas fixas, parcelamentos e baixas automáticas no histórico financeiro.
           </p>
         </div>
 
@@ -145,7 +181,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
           <button
             onClick={onOpenMigrationsModal}
             className="flex items-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-indigo-300 border border-indigo-500/40 px-3 py-2 rounded-xl text-xs font-semibold transition-all shadow-sm"
-            title="Ver e copiar comandos de migration SQL para o Supabase"
+            title="Ver e copiar script SQL de migrations para o Supabase"
           >
             <Database className="w-4 h-4 text-indigo-400" />
             Migrations Supabase
@@ -160,89 +196,127 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
             Sincronizar Faturas
           </button>
 
+          {/* Botão de Previsão de Receitas */}
           <button
-            onClick={onOpenAddModal}
+            onClick={() => onOpenAddModal('receita')}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg shadow-emerald-600/30 transition-all"
+            title="Registrar nova previsão de entrada/receita recorrente"
+          >
+            <TrendingUp className="w-4 h-4" />
+            + Previsão de Receita
+          </button>
+
+          {/* Botão de Conta Fixa / Despesa */}
+          <button
+            onClick={() => onOpenAddModal('despesa')}
             className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
+            title="Cadastrar nova despesa fixa recorrente"
           >
             <Plus className="w-4 h-4" />
-            Nova Conta Fixa
+            Nova Despesa Fixa
           </button>
         </div>
       </div>
 
-      {/* Cards de Métricas e Progresso do Mês */}
+      {/* Cards de Métricas: Despesas vs Receitas vs Saldo Previsto */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Previsto */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold uppercase">
-            <span>Total Previsto no Mês</span>
-            <Calendar className="w-4 h-4 text-indigo-400" />
-          </div>
-          <h3 className="text-2xl font-bold text-white mt-2">
-            R$ {totalPrevisto.toFixed(2)}
-          </h3>
-          <p className="text-[11px] text-slate-500 mt-1">
-            {monthlyItems.length} conta(s) fixa(s) programada(s)
-          </p>
-        </div>
-
-        {/* Total Já Pago */}
-        <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-5 shadow-lg">
+        {/* Card 1: Previsão de Receitas (A Receber) */}
+        <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-5 shadow-lg relative overflow-hidden">
           <div className="flex justify-between items-center text-emerald-400 text-xs font-semibold uppercase">
-            <span>Total Já Quitado</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Previsão de Receitas</span>
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
-          <h3 className="text-2xl font-bold text-emerald-400 mt-2">
-            R$ {totalPago.toFixed(2)}
+          <h3 className="text-2xl font-extrabold text-emerald-400 mt-2 font-mono">
+            R$ {totalReceitasPrevisto.toFixed(2)}
           </h3>
-          <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-2">
+          <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-3">
             <div
               className="h-full bg-emerald-500 transition-all duration-500"
-              style={{ width: `${Math.min(percentPago, 100)}%` }}
+              style={{ width: `${Math.min(percentReceitasRecebido, 100)}%` }}
             ></div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {percentPago.toFixed(0)}% das contas fixas quitadas
-          </p>
-        </div>
-
-        {/* Total Pendente */}
-        <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-5 shadow-lg">
-          <div className="flex justify-between items-center text-amber-400 text-xs font-semibold uppercase">
-            <span>Pendente (A Vencer)</span>
-            <Clock className="w-4 h-4 text-amber-400" />
+          <div className="flex justify-between items-center text-[11px] text-slate-400 mt-2">
+            <span>Recebido: <strong className="text-emerald-300">R$ {totalReceitasRecebido.toFixed(2)}</strong></span>
+            <span>A Receber: <strong className="text-slate-300">R$ {totalReceitasPendente.toFixed(2)}</strong></span>
           </div>
-          <h3 className="text-2xl font-bold text-amber-400 mt-2">
-            R$ {totalPendente.toFixed(2)}
-          </h3>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Contas a vencer dentro do prazo
-          </p>
         </div>
 
-        {/* Total Atrasado */}
-        <div className="bg-slate-900 border border-rose-500/30 rounded-xl p-5 shadow-lg">
+        {/* Card 2: Despesas Fixas (A Pagar) */}
+        <div className="bg-slate-900 border border-indigo-500/30 rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex justify-between items-center text-indigo-300 text-xs font-semibold uppercase">
+            <span>Despesas Fixas a Pagar</span>
+            <TrendingDown className="w-4 h-4 text-indigo-400" />
+          </div>
+          <h3 className="text-2xl font-extrabold text-white mt-2 font-mono">
+            R$ {totalDespesasPrevisto.toFixed(2)}
+          </h3>
+          <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden mt-3">
+            <div
+              className="h-full bg-indigo-500 transition-all duration-500"
+              style={{ width: `${Math.min(percentDespesasPago, 100)}%` }}
+            ></div>
+          </div>
+          <div className="flex justify-between items-center text-[11px] text-slate-400 mt-2">
+            <span>Quitado: <strong className="text-indigo-300">R$ {totalDespesasPago.toFixed(2)}</strong></span>
+            <span>Pendente: <strong className="text-amber-300">R$ {totalDespesasPendente.toFixed(2)}</strong></span>
+          </div>
+        </div>
+
+        {/* Card 3: Saldo Operacional Previsto */}
+        <div className={`bg-slate-900 border rounded-xl p-5 shadow-lg ${
+          saldoPrevisto >= 0 ? 'border-teal-500/30' : 'border-rose-500/30'
+        }`}>
+          <div className="flex justify-between items-center text-slate-400 text-xs font-semibold uppercase">
+            <span>Saldo Previsto no Mês</span>
+            <DollarSign className={`w-4 h-4 ${saldoPrevisto >= 0 ? 'text-teal-400' : 'text-rose-400'}`} />
+          </div>
+          <h3 className={`text-2xl font-extrabold mt-2 font-mono ${
+            saldoPrevisto >= 0 ? 'text-teal-300' : 'text-rose-400'
+          }`}>
+            {saldoPrevisto >= 0 ? '+' : ''}R$ {saldoPrevisto.toFixed(2)}
+          </h3>
+          <p className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
+            <span>Realizado no Histórico:</span>
+            <strong className={`font-mono ${saldoRealizado >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {saldoRealizado >= 0 ? '+' : ''}R$ {saldoRealizado.toFixed(2)}
+            </strong>
+          </p>
+          <div className="mt-1 text-[10px] text-slate-500">
+            {saldoPrevisto >= 0 ? 'Superávit planejado nas contas fixas' : 'Atenção: despesas superam receitas'}
+          </div>
+        </div>
+
+        {/* Card 4: Contas Vencidas & Atrasadas */}
+        <div className={`bg-slate-900 border rounded-xl p-5 shadow-lg ${
+          totalDespesasAtrasado > 0 ? 'border-rose-500/40' : 'border-slate-800'
+        }`}>
           <div className="flex justify-between items-center text-rose-400 text-xs font-semibold uppercase">
-            <span>Contas Vencidas</span>
+            <span>Despesas Vencidas</span>
             <AlertCircle className="w-4 h-4 text-rose-400" />
           </div>
-          <h3 className={`text-2xl font-bold mt-2 ${totalAtrasado > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-            R$ {totalAtrasado.toFixed(2)}
+          <h3 className={`text-2xl font-extrabold mt-2 font-mono ${
+            totalDespesasAtrasado > 0 ? 'text-rose-400' : 'text-slate-400'
+          }`}>
+            R$ {totalDespesasAtrasado.toFixed(2)}
           </h3>
-          <p className="text-[11px] text-slate-500 mt-1">
-            {totalAtrasado > 0 ? 'Atenção: pagamentos pendentes em atraso' : 'Nenhuma conta em atraso'}
+          <p className="text-[11px] text-slate-500 mt-3">
+            {totalDespesasAtrasado > 0
+              ? 'Existem pagamentos pendentes com prazo vencido'
+              : 'Nenhuma conta em atraso no período'}
           </p>
         </div>
       </div>
 
-      {/* Barra de Filtros e Busca */}
+      {/* Barra de Filtros, Natureza e Busca */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
-            { id: 'all', label: 'Todas as Contas' },
+            { id: 'all', label: `Todos (${monthlyItems.length})` },
+            { id: 'despesa', label: `Despesas (${despesasItems.length})` },
+            { id: 'receita', label: `Receitas Previstas (${receitasItems.length})` },
             { id: 'pendente', label: 'Pendentes' },
-            { id: 'pago', label: 'Pagas' },
-            { id: 'atrasado', label: 'Atrasadas' },
+            { id: 'pago', label: 'Quitados / Recebidos' },
+            { id: 'atrasado', label: 'Atrasados' },
             { id: 'cartao', label: 'Faturas de Cartão' }
           ].map(f => (
             <button
@@ -250,7 +324,9 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
               onClick={() => setStatusFilter(f.id as any)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 statusFilter === f.id
-                  ? 'bg-indigo-600 text-white shadow-md'
+                  ? f.id === 'receita'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'bg-indigo-600 text-white shadow-md'
                   : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
@@ -264,7 +340,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
             <input
               type="text"
-              placeholder="Buscar conta fixa..."
+              placeholder="Buscar conta ou previsão..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
@@ -292,26 +368,34 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
         </div>
       </div>
 
-      {/* Lista Principal de Contas Fixas */}
+      {/* Lista Principal de Contas Fixas e Previsões de Receita */}
       {filteredItems.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/20">
             <Calendar className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">Nenhuma conta fixa encontrada</h3>
+            <h3 className="text-base font-bold text-white">Nenhum registro encontrado</h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
               {statusFilter !== 'all' || searchTerm
-                ? 'Nenhum resultado corresponde aos filtros selecionados. Experimente limpar a busca.'
-                : `Ainda não há contas fixas registradas para o mês de ${MONTHS[selectedMonth - 1]}/${selectedYear}.`}
+                ? 'Nenhum item corresponde aos filtros selecionados. Experimente limpar a busca.'
+                : `Ainda não há despesas ou receitas fixas registradas para o mês de ${MONTHS[selectedMonth - 1]}/${selectedYear}.`}
             </p>
           </div>
-          <button
-            onClick={onOpenAddModal}
-            className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
-          >
-            <Plus className="w-4 h-4" /> Cadastrar Primeira Conta Fixa
-          </button>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => onOpenAddModal('despesa')}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
+            >
+              <Plus className="w-4 h-4" /> Cadastrar Despesa Fixa
+            </button>
+            <button
+              onClick={() => onOpenAddModal('receita')}
+              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-lg shadow-emerald-600/30 transition-all"
+            >
+              <TrendingUp className="w-4 h-4" /> Previsão de Receita
+            </button>
+          </div>
         </div>
       ) : viewMode === 'table' ? (
         /* Modo Tabela */
@@ -320,19 +404,21 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 sticky top-0 z-10">
                 <tr>
+                  <th className="p-3.5">Natureza</th>
                   <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Conta Fixa / Descrição</th>
+                  <th className="p-3.5">Descrição / Conta</th>
                   <th className="p-3.5">Origem / Categoria</th>
-                  <th className="p-3.5">Vencimento</th>
-                  <th className="p-3.5">Data Pagamento</th>
+                  <th className="p-3.5">Vencimento / Prev.</th>
+                  <th className="p-3.5">Data Baixa</th>
                   <th className="p-3.5">Parcela / Duração</th>
-                  <th className="p-3.5 text-right">Valor (R$)</th>
-                  <th className="p-3.5">Conta Débito</th>
+                  <th className="p-3.5 text-right">Valor Previsto</th>
+                  <th className="p-3.5">Conta Vinculada</th>
                   <th className="p-3.5 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {filteredItems.map(({ account, installment }) => {
+                  const isReceita = account.natureza === 'receita';
                   const isPaid = installment.status === 'pago';
                   const isLate = installment.status === 'atrasado';
                   const isEditingValue = editingInstallmentId === installment.id;
@@ -341,9 +427,28 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                     <tr
                       key={installment.id}
                       className={`hover:bg-slate-800/40 transition-colors ${
-                        isPaid ? 'bg-emerald-950/10' : isLate ? 'bg-rose-950/10' : ''
+                        isPaid
+                          ? 'bg-emerald-950/10'
+                          : isLate
+                          ? 'bg-rose-950/10'
+                          : isReceita
+                          ? 'bg-emerald-950/5'
+                          : ''
                       }`}
                     >
+                      {/* Natureza */}
+                      <td className="p-3.5">
+                        {isReceita ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
+                            <TrendingUp className="w-3 h-3 text-emerald-400" /> Receita
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300">
+                            <TrendingDown className="w-3 h-3 text-rose-400" /> Despesa
+                          </span>
+                        )}
+                      </td>
+
                       {/* Status */}
                       <td className="p-3.5">
                         <span
@@ -352,16 +457,23 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                               : isLate
                               ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 animate-pulse'
+                              : isReceita
+                              ? 'bg-teal-500/15 border-teal-500/40 text-teal-300'
                               : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                           }`}
                         >
                           {isPaid ? (
                             <>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Pago
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              {isReceita ? 'Recebido' : 'Pago'}
                             </>
                           ) : isLate ? (
                             <>
                               <AlertCircle className="w-3 h-3 text-rose-400" /> Atrasado
+                            </>
+                          ) : isReceita ? (
+                            <>
+                              <Clock className="w-3 h-3 text-teal-400" /> A Receber
                             </>
                           ) : (
                             <>
@@ -415,7 +527,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                         </span>
                       </td>
 
-                      {/* Data Pagamento */}
+                      {/* Data Baixa (Pagamento / Recebimento) */}
                       <td className="p-3.5 font-mono">
                         {isPaid && installment.dataPagamento ? (
                           <div>
@@ -465,8 +577,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                           </div>
                         ) : (
                           <div className="group/val flex items-center justify-end gap-1.5">
-                            <span className="text-sm font-bold text-white">
-                              R$ {Number(installment.valor).toFixed(2)}
+                            <span className={`text-sm font-extrabold ${isReceita ? 'text-emerald-400' : 'text-white'}`}>
+                              {isReceita ? '+ ' : ''}R$ {Number(installment.valor).toFixed(2)}
                             </span>
                             <button
                               onClick={() => handleStartEditingValue(installment)}
@@ -479,7 +591,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                         )}
                       </td>
 
-                      {/* Conta de Débito */}
+                      {/* Conta Vinculada */}
                       <td className="p-3.5">
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
@@ -510,7 +622,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                             <button
                               onClick={() => onRevertPayment(account, installment)}
                               className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-200 border border-slate-700 transition-colors flex items-center gap-1"
-                              title="Desmarcar pagamento e remover do histórico"
+                              title={isReceita ? "Desmarcar recebimento e remover do histórico" : "Desmarcar pagamento e estornar do histórico"}
                             >
                               <RotateCcw className="w-3 h-3" />
                               Desmarcar
@@ -518,18 +630,22 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                           ) : (
                             <button
                               onClick={() => onOpenPayModal(account, installment)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
-                              title="Registrar pagamento e lançar no histórico do painel principal"
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-md transition-all flex items-center gap-1.5 ${
+                                isReceita
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                              }`}
+                              title={isReceita ? "Registrar recebimento e lançar no histórico" : "Registrar pagamento e lançar no histórico"}
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              Pagar
+                              {isReceita ? 'Receber' : 'Pagar'}
                             </button>
                           )}
 
                           <button
                             onClick={() => onEditAccount(account)}
                             className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                            title="Editar conta fixa e vigência"
+                            title="Editar conta e vigência"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -537,7 +653,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                           <button
                             onClick={() => onDeleteAccount(account.id)}
                             className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                            title="Excluir conta fixa"
+                            title="Excluir cadastro"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -554,6 +670,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
         /* Modo Cards */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map(({ account, installment }) => {
+            const isReceita = account.natureza === 'receita';
             const isPaid = installment.status === 'pago';
             const isLate = installment.status === 'atrasado';
 
@@ -565,19 +682,32 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                     ? 'border-emerald-500/40 bg-gradient-to-b from-slate-900 to-emerald-950/20'
                     : isLate
                     ? 'border-rose-500/40 bg-gradient-to-b from-slate-900 to-rose-950/20'
+                    : isReceita
+                    ? 'border-emerald-500/30 bg-gradient-to-b from-slate-900 to-emerald-950/10'
                     : 'border-slate-800 hover:border-indigo-500/40'
                 }`}
               >
                 <div>
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex items-center gap-2">
-                      {account.isCartao && (
+                      {account.isCartao ? (
                         <span className="p-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
                           <CreditCard className="w-4 h-4" />
                         </span>
-                      )}
+                      ) : isReceita ? (
+                        <span className="p-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          <TrendingUp className="w-4 h-4" />
+                        </span>
+                      ) : null}
                       <div>
-                        <h4 className="text-base font-bold text-white">{account.nome}</h4>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-base font-bold text-white">{account.nome}</h4>
+                          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                            isReceita ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {isReceita ? 'Receita' : 'Despesa'}
+                          </span>
+                        </div>
                         <p className="text-xs text-slate-400">{account.origem} &bull; {account.classificacao}</p>
                       </div>
                     </div>
@@ -588,30 +718,32 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                           ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                           : isLate
                           ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                          : isReceita
+                          ? 'bg-teal-500/20 border-teal-500/40 text-teal-300'
                           : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
                       }`}
                     >
-                      {isPaid ? 'Pago' : isLate ? 'Atrasado' : 'Pendente'}
+                      {isPaid ? (isReceita ? 'Recebido' : 'Pago') : isLate ? 'Atrasado' : isReceita ? 'A Receber' : 'Pendente'}
                     </span>
                   </div>
 
                   <div className="mt-4 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Valor da Parcela:</span>
-                      <span className="font-mono font-bold text-white text-sm">
-                        R$ {Number(installment.valor).toFixed(2)}
+                      <span className="text-slate-400">Valor Previsto:</span>
+                      <span className={`font-mono font-extrabold text-sm ${isReceita ? 'text-emerald-400' : 'text-white'}`}>
+                        {isReceita ? '+ ' : ''}R$ {Number(installment.valor).toFixed(2)}
                       </span>
                     </div>
 
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Vencimento:</span>
+                      <span className="text-slate-400">Vencimento / Prazo:</span>
                       <span className="font-mono text-slate-200">
                         {installment.dataVencimento.split('-').reverse().join('/')} (Dia {account.diaVencimento})
                       </span>
                     </div>
 
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Duração / Parcela:</span>
+                      <span className="text-slate-400">Duração / Período:</span>
                       <span className="font-mono text-indigo-300 font-semibold">
                         {installment.numeroParcela} de {installment.totalParcelas} meses
                       </span>
@@ -619,7 +751,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
                     {isPaid && installment.dataPagamento && (
                       <div className="flex justify-between text-xs pt-1 border-t border-slate-800">
-                        <span className="text-emerald-400 font-semibold">Data do Pagamento:</span>
+                        <span className="text-emerald-400 font-semibold">Data da Baixa:</span>
                         <span className="font-mono text-emerald-300 font-bold">
                           {installment.dataPagamento.split('-').reverse().join('/')}
                         </span>
@@ -658,7 +790,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                       onClick={() => onOpenPayModal(account, installment)}
                       className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
                     >
-                      <CheckCircle2 className="w-4 h-4" /> Registrar Pagamento
+                      <CheckCircle2 className="w-4 h-4" />
+                      {isReceita ? 'Registrar Recebimento' : 'Registrar Pagamento'}
                     </button>
                   )}
                 </div>
