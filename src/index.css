@@ -115,7 +115,7 @@ body.light,
 }
 
 /* text-white should become dark slate EXCEPT when inside colored buttons/badges or gradients */
-.light .text-white:not(button.bg-indigo-600 *):not(button.bg-indigo-600):not(button.bg-rose-600 *):not(button.bg-rose-600):not(button.bg-purple-600 *):not(button.bg-purple-600):not(button.bg-emerald-600 *):not(button.bg-emerald-600):not(.bg-gradient-to-tr *):not(.bg-gradient-to-r *):not(.bg-gradient-to-br *) {
+.light .text-white:not(button *):not(button):not(.bg-gradient-to-tr *):not(.bg-gradient-to-r *):not(.bg-gradient-to-br *):not(.neon-white) {
   color: #0f172a;
 }
 
@@ -148,6 +148,7 @@ body.light,
 .light textarea:focus {
   border-color: #6366f1 !important;
   background-color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25) !important;
 }
 
 .light select option {
@@ -170,7 +171,7 @@ body.light,
 .light .bg-slate-900.border-indigo-500\/40,
 .light .bg-slate-900.border-purple-500\/30 {
   background-color: #ffffff !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 25px rgba(99, 102, 241, 0.15) !important;
 }
 
 /* Shadow enhancements in light mode */
@@ -191,4 +192,408 @@ body.light,
 }
 .light ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* =========================================================
+   LIGHT THEME NEON HIGHLIGHTS & ACCENTS (Botões e Informativos)
+   ========================================================= */
+
+/* 1. BOTÕES NEON PRIMÁRIOS (Indigo / Roxo Elétrico) */
+.light button.bg-indigo-600,
+.light button[type="submit"].bg-indigo-600 {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #818cf8 !important;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45), 0 2px 6px rgba(79, 70, 229, 0.3) !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.light button.bg-indigo-600:hover,
+.light button[type="submit"].bg-indigo-600:hover {
+  background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%) !important;
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.7), 0 4px 12px rgba(79, 70, 229, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* 2. BOTÕES NEON VERDE / ESMERALDA (Receitas, Quitações) */
+.light button.bg-emerald-600,
+.light button.bg-emerald-500 {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #34d399 !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(5, 150, 105, 0.3) !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.light button.bg-emerald-600:hover,
+.light button.bg-emerald-500:hover {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+  box-shadow: 0 0 24px rgba(16, 185, 129, 0.7), 0 4px 12px rgba(5, 150, 105, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* 3. BOTÕES NEON ROSE / VERMELHO (Excluir, Perigo) */
+.light button.bg-rose-600,
+.light button.bg-rose-600\/90,
+.light button.bg-rose-500 {
+  background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #fb7185 !important;
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.45), 0 2px 6px rgba(225, 29, 72, 0.3) !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.light button.bg-rose-600:hover,
+.light button.bg-rose-600\/90:hover {
+  background: linear-gradient(135deg, #be123c 0%, #e11d48 100%) !important;
+  box-shadow: 0 0 24px rgba(244, 63, 94, 0.7), 0 4px 12px rgba(225, 29, 72, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* 4. BOTÕES DE AÇÃO DOS CARDS (Detalhar, Editar, Excluir) */
+.light button:has(svg.lucide-eye),
+.light [title="Ver todos os detalhes deste lançamento"],
+.light [title="Detalhes do lançamento"] {
+  background: #eef2ff !important;
+  border: 1.5px solid #818cf8 !important;
+  color: #4338ca !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25) !important;
+  font-weight: 700 !important;
+  transition: all 0.2s ease !important;
+}
+
+.light button:has(svg.lucide-eye):hover,
+.light [title="Ver todos os detalhes deste lançamento"]:hover,
+.light [title="Detalhes do lançamento"]:hover {
+  background: #e0e7ff !important;
+  box-shadow: 0 0 18px rgba(99, 102, 241, 0.5) !important;
+  border-color: #6366f1 !important;
+  transform: translateY(-1px);
+}
+
+.light button:has(svg.lucide-edit-3),
+.light [title="Editar lançamento"] {
+  background: #fdf4ff !important;
+  border: 1.5px solid #c084fc !important;
+  color: #7e22ce !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.25) !important;
+  font-weight: 700 !important;
+  transition: all 0.2s ease !important;
+}
+
+.light button:has(svg.lucide-edit-3):hover,
+.light [title="Editar lançamento"]:hover {
+  background: #fae8ff !important;
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.5) !important;
+  border-color: #a855f7 !important;
+  transform: translateY(-1px);
+}
+
+.light button:has(svg.lucide-trash-2),
+.light [title="Excluir este lançamento"],
+.light [title="Excluir lançamento"] {
+  background: #fff1f2 !important;
+  border: 1.5px solid #fb7185 !important;
+  color: #be123c !important;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.25) !important;
+  font-weight: 700 !important;
+  transition: all 0.2s ease !important;
+}
+
+.light button:has(svg.lucide-trash-2):hover,
+.light [title="Excluir este lançamento"]:hover,
+.light [title="Excluir lançamento"]:hover {
+  background: #ffe4e6 !important;
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.5) !important;
+  border-color: #f43f5e !important;
+  transform: translateY(-1px);
+}
+
+/* 5. NAVEGAÇÃO & ABAS (Glow Neon na Aba Ativa) */
+.light button.bg-indigo-600\/20,
+.light .text-indigo-400.bg-indigo-950\/40 {
+  background: #eef2ff !important;
+  color: #4338ca !important;
+  border: 1.5px solid #6366f1 !important;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.35) !important;
+  font-weight: 700 !important;
+}
+
+/* Seletor de Período Neon */
+.light header .bg-slate-950.border-indigo-500\/30 {
+  background: #ffffff !important;
+  border: 1.5px solid #818cf8 !important;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.25) !important;
+}
+
+/* Botões do Topo (Migrations, Alternar Tema, Menu Lateral) */
+.light [title="Ver e copiar migration SQL para o Supabase"],
+.light [title="Migrations"] {
+  background: #eef2ff !important;
+  border: 1.5px solid #818cf8 !important;
+  color: #4338ca !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25) !important;
+}
+
+.light [aria-label="Alternar Tema"] {
+  border: 1.5px solid #f59e0b !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3) !important;
+  background: #fffbeb !important;
+  color: #b45309 !important;
+}
+
+.light [aria-label="Abrir Menu de Abas"],
+.light button:has(svg.lucide-menu) {
+  border: 1.5px solid #818cf8 !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25) !important;
+  background: #eef2ff !important;
+  color: #4338ca !important;
+}
+
+/* 6. INFORMATIVOS E CARDS DE SALDOS (PAINEL GERAL) */
+/* Marquee / Ticker de Resumo */
+.light .animate-marquee {
+  font-weight: 600;
+}
+
+.light div:has(> .animate-marquee) {
+  background: #ffffff !important;
+}
+
+.light .bg-slate-900\/90.border-indigo-500\/30 {
+  background: #ffffff !important;
+  border: 1.5px solid #818cf8 !important;
+  box-shadow: 0 0 18px rgba(99, 102, 241, 0.2), 0 4px 12px rgba(0, 0, 0, 0.04) !important;
+}
+
+.light .bg-slate-900\/90.border-indigo-500\/30 .bg-indigo-500\/10 {
+  background: #e0e7ff !important;
+  color: #4338ca !important;
+  border: 1px solid #6366f1 !important;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Card 1: Conta Talyson (Neon Electric Blue) */
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(1) {
+  border: 1.5px solid #38bdf8 !important;
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.25), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #f0f9ff) !important;
+}
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(1) h3 {
+  color: #0284c7 !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+}
+
+/* Card 2: Conta Karla (Neon Purple) */
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(2) {
+  border: 1.5px solid #c084fc !important;
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.25), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #faf5ff) !important;
+}
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(2) h3 {
+  color: #7e22ce !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+/* Card 3: Saldo Consolidado (Neon Gradient Card) */
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(3) {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+  border: 1.5px solid #a5b4fc !important;
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.45), 0 8px 20px rgba(79, 70, 229, 0.3) !important;
+}
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(3) * {
+  color: #ffffff !important;
+}
+
+/* Card 4: Faturas de Cartão (Neon Magenta) */
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(4) {
+  border: 1.5px solid #e879f9 !important;
+  box-shadow: 0 0 18px rgba(217, 70, 239, 0.25), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #fdf4ff) !important;
+}
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 > div:nth-child(4) h3 {
+  color: #a21caf !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+}
+
+/* 7. CARDS DE MÉTRICAS EM CONTAS FIXAS (Previsões, Despesas, Saldo Operacional) */
+.light .border-emerald-500\/30,
+.light .border-emerald-500\/40 {
+  border: 1.5px solid #34d399 !important;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.22), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #f0fdf4) !important;
+}
+
+.light .border-amber-500\/30,
+.light .border-amber-500\/40 {
+  border: 1.5px solid #fcd34d !important;
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.22), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #fffbeb) !important;
+}
+
+.light .border-teal-500\/30,
+.light .border-teal-500\/40 {
+  border: 1.5px solid #2dd4bf !important;
+  box-shadow: 0 0 18px rgba(20, 184, 166, 0.22), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #f0fdfa) !important;
+}
+
+.light .border-rose-500\/30,
+.light .border-rose-500\/40 {
+  border: 1.5px solid #fb7185 !important;
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.22), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+  background: linear-gradient(145deg, #ffffff, #fff1f2) !important;
+}
+
+/* 8. CARDS DE LANÇAMENTOS (Modo Cards em TransactionsTable) */
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-3 > div {
+  background: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.2s ease !important;
+}
+
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-3 > div:hover {
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.22), 0 6px 16px rgba(0, 0, 0, 0.06) !important;
+  transform: translateY(-2px);
+}
+
+.light .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-3 > div.border-indigo-500 {
+  border: 2px solid #6366f1 !important;
+  box-shadow: 0 0 22px rgba(99, 102, 241, 0.35) !important;
+  background: #f5f7ff !important;
+}
+
+/* 9. BADGES & ETIQUETAS COM REALCE NEON */
+.light .bg-indigo-950\/50,
+.light .bg-indigo-950\/40,
+.light .bg-indigo-950\/30,
+.light .bg-indigo-950 {
+  background-color: #eef2ff !important;
+  color: #4338ca !important;
+  border: 1px solid #818cf8 !important;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-purple-950\/50,
+.light .bg-purple-950\/40,
+.light .bg-purple-950\/30,
+.light .bg-purple-950 {
+  background-color: #faf5ff !important;
+  color: #7e22ce !important;
+  border: 1px solid #c084fc !important;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-emerald-950\/50,
+.light .bg-emerald-950\/40,
+.light .bg-emerald-950\/30,
+.light .bg-emerald-950,
+.light .bg-emerald-500\/20 {
+  background-color: #ecfdf5 !important;
+  color: #047857 !important;
+  border: 1px solid #34d399 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-rose-950\/50,
+.light .bg-rose-950\/40,
+.light .bg-rose-950\/30,
+.light .bg-rose-950,
+.light .bg-rose-500\/20 {
+  background-color: #fff1f2 !important;
+  color: #be123c !important;
+  border: 1px solid #fb7185 !important;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-amber-950\/50,
+.light .bg-amber-950\/40,
+.light .bg-amber-950\/30,
+.light .bg-amber-950,
+.light .bg-amber-500\/20 {
+  background-color: #fffbeb !important;
+  color: #b45309 !important;
+  border: 1px solid #fcd34d !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-teal-500\/20 {
+  background-color: #f0fdfa !important;
+  color: #0f766e !important;
+  border: 1px solid #2dd4bf !important;
+  box-shadow: 0 0 8px rgba(20, 184, 166, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-blue-950\/60,
+.light .bg-blue-500\/15 {
+  background-color: #f0f9ff !important;
+  color: #0369a1 !important;
+  border: 1px solid #38bdf8 !important;
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+.light .bg-purple-950\/60,
+.light .bg-purple-500\/15 {
+  background-color: #faf5ff !important;
+  color: #6b21a8 !important;
+  border: 1px solid #a855f7 !important;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.25) !important;
+  font-weight: 700 !important;
+}
+
+/* 10. TEXTOS E VALORES NEON DE ALTO CONTRASTE */
+.light .text-emerald-400,
+.light .text-emerald-300 {
+  color: #059669 !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.2);
+}
+
+.light .text-rose-400,
+.light .text-rose-300 {
+  color: #e11d48 !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 8px rgba(244, 63, 94, 0.2);
+}
+
+.light .text-indigo-400,
+.light .text-indigo-300 {
+  color: #4f46e5 !important;
+  font-weight: 800 !important;
+}
+
+.light .text-purple-400,
+.light .text-purple-300 {
+  color: #7c3aed !important;
+  font-weight: 800 !important;
+}
+
+.light .text-amber-400,
+.light .text-amber-300 {
+  color: #d97706 !important;
+  font-weight: 800 !important;
+}
+
+.light .text-teal-400,
+.light .text-teal-300 {
+  color: #0d9488 !important;
+  font-weight: 800 !important;
 }
