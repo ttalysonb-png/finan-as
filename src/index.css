@@ -29,3 +29,166 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3b4763; 
 }
+
+/* =========================================================
+   LIGHT THEME OVERRIDES
+   ========================================================= */
+html.light,
+body.light,
+.light {
+  color-scheme: light;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Backgrounds */
+.light .bg-slate-950 {
+  background-color: #f8fafc !important;
+}
+
+.light .bg-slate-950\/95,
+.light .bg-slate-950\/90,
+.light .bg-slate-950\/80,
+.light .bg-slate-950\/70 {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+.light .bg-slate-950\/60,
+.light .bg-slate-950\/50,
+.light .bg-slate-950\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+.light .bg-slate-900 {
+  background-color: #ffffff !important;
+}
+
+.light .bg-slate-900\/95,
+.light .bg-slate-900\/90,
+.light .bg-slate-900\/80 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.light .bg-slate-800 {
+  background-color: #f1f5f9 !important;
+}
+
+.light .bg-slate-800\/80,
+.light .bg-slate-800\/50,
+.light .bg-slate-800\/40 {
+  background-color: #f8fafc !important;
+}
+
+/* Borders */
+.light .border-slate-800,
+.light .border-slate-800\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+.light .border-slate-700 {
+  border-color: #cbd5e1 !important;
+}
+
+.light .divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Texts */
+.light .text-slate-100 {
+  color: #0f172a !important;
+}
+
+.light .text-slate-200 {
+  color: #1e293b !important;
+}
+
+.light .text-slate-300 {
+  color: #334155 !important;
+}
+
+.light .text-slate-400 {
+  color: #64748b !important;
+}
+
+.light .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* text-white should become dark slate EXCEPT when inside colored buttons/badges or gradients */
+.light .text-white:not(button.bg-indigo-600 *):not(button.bg-indigo-600):not(button.bg-rose-600 *):not(button.bg-rose-600):not(button.bg-purple-600 *):not(button.bg-purple-600):not(button.bg-emerald-600 *):not(button.bg-emerald-600):not(.bg-gradient-to-tr *):not(.bg-gradient-to-r *):not(.bg-gradient-to-br *) {
+  color: #0f172a;
+}
+
+/* Hover effects */
+.light .hover\:bg-slate-800:hover,
+.light .hover\:bg-slate-800\/50:hover,
+.light .hover\:bg-slate-800\/80:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.light .hover\:bg-slate-700:hover {
+  background-color: #e2e8f0 !important;
+}
+
+.light .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+/* Inputs, Selects and Textareas */
+.light input:not([type="checkbox"]):not([type="radio"]),
+.light select,
+.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light input:not([type="checkbox"]):not([type="radio"]):focus,
+.light select:focus,
+.light textarea:focus {
+  border-color: #6366f1 !important;
+  background-color: #ffffff !important;
+}
+
+.light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Thead in tables */
+.light thead.bg-slate-950 {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+}
+
+.light thead th {
+  color: #475569 !important;
+}
+
+/* Modals & Dialogs */
+.light .bg-slate-900.border-slate-800,
+.light .bg-slate-900.border-indigo-500\/40,
+.light .bg-slate-900.border-purple-500\/30 {
+  background-color: #ffffff !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Shadow enhancements in light mode */
+.light .shadow-xl {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+}
+
+.light .shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Scrollbar in light mode */
+.light ::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

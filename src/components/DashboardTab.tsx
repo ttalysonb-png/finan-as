@@ -21,6 +21,7 @@ interface DashboardTabProps {
   incomeExpenseRatio: number;
   financialHealthScore: number;
   historicalComparison: { period: string; income: number; expense: number }[];
+  theme?: 'light' | 'dark';
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
@@ -33,14 +34,19 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   monthlyExpensesTotal,
   incomeExpenseRatio,
   financialHealthScore,
-  historicalComparison
+  historicalComparison,
+  theme = 'dark'
 }) => {
+  const isLight = theme === 'light';
   const categoryChartRef = useRef<HTMLCanvasElement>(null);
   const trendChartRef = useRef<HTMLCanvasElement>(null);
   const categoryChartInstance = useRef<Chart | null>(null);
   const trendChartInstance = useRef<Chart | null>(null);
 
   useEffect(() => {
+    const gridColor = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.05)';
+    const tickColor = isLight ? '#475569' : '#94a3b8';
+    const legendColor = isLight ? '#1e293b' : '#cbd5e1';
     if (categoryChartRef.current) {
       if (categoryChartInstance.current) {
         categoryChartInstance.current.destroy();
@@ -80,8 +86,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               legend: { display: false }
             },
             scales: {
-              y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
-              x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+              y: { grid: { color: gridColor }, ticks: { color: tickColor } },
+              x: { grid: { display: false }, ticks: { color: tickColor } }
             }
           }
         });
@@ -127,11 +133,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: { labels: { color: '#cbd5e1' } }
+              legend: { labels: { color: legendColor } }
             },
             scales: {
-              y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
-              x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+              y: { grid: { color: gridColor }, ticks: { color: tickColor } },
+              x: { grid: { display: false }, ticks: { color: tickColor } }
             }
           }
         });
@@ -142,7 +148,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       if (categoryChartInstance.current) categoryChartInstance.current.destroy();
       if (trendChartInstance.current) trendChartInstance.current.destroy();
     };
-  }, [monthlyTransactions, historicalComparison, selectedPeriodKey, expenseCategories]);
+  }, [monthlyTransactions, historicalComparison, selectedPeriodKey, expenseCategories, theme, isLight]);
 
   return (
     <div className="space-y-6">

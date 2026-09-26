@@ -86,6 +86,30 @@ export default function App() {
   const [showAddCard, setShowAddCard] = useState(false);
   const [selectedCardForDetails, setSelectedCardForDetails] = useState<Card | null>(null);
 
+  // Tema Claro / Escuro
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('app_theme');
+    return saved === 'light' || saved === 'dark' ? saved : 'dark';
+  });
+
+  const toggleTheme = () => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('app_theme', next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    }
+  }, [theme]);
+
   // Formulário de Novo Lançamento
   const selectedPeriodKey = useMemo(() => {
     const m = String(selectedMonth).padStart(2, '0');
@@ -682,6 +706,31 @@ export default function App() {
     };
 
     await supabase.from('transactions').update(dbPayload).eq('id', id);
+  };
+
+  const handleUpdateFullTx = async (updatedTx: Transaction) => {
+    setTransactions(prev => prev.map(t => (t.id === updatedTx.id ? updatedTx : t)));
+
+    const dbPayload = {
+      data: updatedTx.data,
+      origem: updatedTx.origem,
+      classificacao: updatedTx.classificacao,
+      conta: updatedTx.conta,
+      cartao_id: updatedTx.cartaoId,
+      entrada: updatedTx.entrada,
+      saida: updatedTx.saída,
+      comentario: updatedTx.comentario,
+      individuo: updatedTx.individuo,
+      operacao: updatedTx.operacao,
+      fixed_installment_id: updatedTx.fixedInstallmentId
+    };
+
+    const { error } = await supabase.from('transactions').update(dbPayload).eq('id', updatedTx.id);
+    if (error) {
+      showToast('Erro ao atualizar lançamento no banco de dados.', 'error');
+    } else {
+      showToast('Lançamento atualizado com sucesso!');
+    }
   };
 
   const handleDeleteSingleTx = (txId: number) => {
@@ -1476,7 +1525,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+    <div className={`flex-1 flex flex-col h-screen w-screen overflow-hidden font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-150 ${theme === 'light' ? 'light bg-slate-50 text-slate-900' : 'dark bg-slate-950 text-slate-100'}`}>
       {/* Header e Barra de Navegação */}
       <Navbar
         financeTab={financeTab}
@@ -1495,6 +1544,8 @@ export default function App() {
         pendingFixedCount={pendingFixedCount}
         lateFixedCount={lateFixedCount}
         onOpenMigrationsModal={() => setShowMigrationsModal(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <main className="flex-1 overflow-y-auto">
@@ -1596,6 +1647,7 @@ export default function App() {
                   setSelectedTxIds(e.target.checked ? filteredTransactions.map(t => t.id) : [])
                 }
                 onUpdateTx={handleUpdateTx}
+                onSaveEditedTx={handleUpdateFullTx}
                 onOpenCustomModal={(type, target) =>
                   setCustomModal({ isOpen: true, type, categoryTarget: target || '', name: '' })
                 }
@@ -1653,6 +1705,7 @@ export default function App() {
               incomeExpenseRatio={incomeExpenseRatio}
               financialHealthScore={financialHealthScore}
               historicalComparison={historicalComparison}
+              theme={theme}
             />
           )}
 
