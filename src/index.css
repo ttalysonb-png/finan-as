@@ -200,6 +200,7 @@ body.light,
 
 /* 1. BOTÕES NEON PRIMÁRIOS (Indigo / Roxo Elétrico) */
 .light button.bg-indigo-600,
+.light button[class*="from-indigo-600"],
 .light button[type="submit"].bg-indigo-600 {
   background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
   color: #ffffff !important;
@@ -211,6 +212,7 @@ body.light,
 }
 
 .light button.bg-indigo-600:hover,
+.light button[class*="from-indigo-600"]:hover,
 .light button[type="submit"].bg-indigo-600:hover {
   background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%) !important;
   box-shadow: 0 0 24px rgba(99, 102, 241, 0.7), 0 4px 12px rgba(79, 70, 229, 0.4) !important;
@@ -597,3 +599,93 @@ body.light,
   color: #0d9488 !important;
   font-weight: 800 !important;
 }
+
+/* =========================================================
+   REGRAS DE IMPRESSÃO & EXPORTAÇÃO PDF (RELATÓRIO ANALÍTICO)
+   ========================================================= */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 12mm 10mm;
+  }
+
+  /* Oculta toda a aplicação exceto a folha do relatório */
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Oculta elementos de navegação, modais fora da área imprimível */
+  header,
+  nav,
+  aside,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Faz o container do modal ocupar toda a página sem backdrop escuro */
+  .fixed.inset-0 {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  .max-w-5xl {
+    max-width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  #analytical-report-printable-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    page-break-after: auto;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #analytical-report-printable-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .report-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 0 0 0 !important;
+    padding: 0 0 0 0 !important;
+    background: #ffffff !important;
+  }
+
+  .report-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Evita quebras desfavoráveis no meio de tabelas e blocos */
+  #analytical-report-printable-area table,
+  #analytical-report-printable-area tr,
+  #analytical-report-printable-area .border {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+

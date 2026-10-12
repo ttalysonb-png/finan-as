@@ -128,7 +128,8 @@ export default function App() {
     comentario: '',
     individuo: 'Ambos',
     isParcelado: false,
-    totalParcelas: '2'
+    totalParcelas: '2',
+    parcelaInicial: '1'
   });
 
   const [newCard, setNewCard] = useState({
@@ -576,11 +577,15 @@ export default function App() {
     if (isCreditoParcelado && parcelasCount > 1) {
       const valorParcela = totalSaida / parcelasCount;
       const payloads: any[] = [];
+      const startParcela = Math.max(1, Math.min(parcelasCount, parseInt(newTxForm.parcelaInicial, 10) || 1));
+      const remainingParcelasCount = parcelasCount - startParcela + 1;
 
-      for (let i = 0; i < parcelasCount; i++) {
-        const parcelaData = addMonthsToDate(newTxForm.data, i);
+      // Gera as parcelas a partir da parcela inicial escolhida pelo usuário (ex: da parcela 3 até 10)
+      for (let p = startParcela; p <= parcelasCount; p++) {
+        const offsetMes = p - startParcela;
+        const parcelaData = addMonthsToDate(newTxForm.data, offsetMes);
         const comentarioBase = newTxForm.comentario ? newTxForm.comentario : 'Compra Parcelada';
-        const comentarioParcela = `${comentarioBase} (${i + 1}/${parcelasCount})`;
+        const comentarioParcela = `${comentarioBase} (${p}/${parcelasCount})`;
 
         payloads.push({
           data: parcelaData,
@@ -615,7 +620,11 @@ export default function App() {
         }));
         setTransactions(prev => [...newRows, ...prev]);
         setShowAddTxModal(false);
-        showToast(`${parcelasCount} parcelas cadastradas com sucesso!`);
+        showToast(
+          startParcela > 1
+            ? `${remainingParcelasCount} parcelas cadastradas (da ${startParcela}ª até a ${parcelasCount}ª)!`
+            : `${parcelasCount} parcelas cadastradas com sucesso!`
+        );
       } else {
         showToast('Erro ao salvar parcelamento no banco.', 'error');
       }
@@ -673,7 +682,8 @@ export default function App() {
       comentario: '',
       individuo: 'Ambos',
       isParcelado: false,
-      totalParcelas: '2'
+      totalParcelas: '2',
+      parcelaInicial: '1'
     });
   };
 
@@ -1705,6 +1715,12 @@ export default function App() {
               incomeExpenseRatio={incomeExpenseRatio}
               financialHealthScore={financialHealthScore}
               historicalComparison={historicalComparison}
+              fixedAccounts={fixedAccounts}
+              budgets={budgets}
+              cards={cards}
+              talysonBalance={talysonBalance}
+              karlaBalance={karlaBalance}
+              consolidatedBalance={consolidatedBalance}
               theme={theme}
             />
           )}
@@ -1737,6 +1753,21 @@ export default function App() {
               onSetSelectedCardForDetails={setSelectedCardForDetails}
               onSetCardSpreadsheetMode={setCardSpreadsheetMode}
               onOpenAddCard={() => setShowAddCard(true)}
+              onOpenAddTxModal={() => {
+                setNewTxForm(prev => ({
+                  ...prev,
+                  operacao: 'Crédito',
+                  cartaoId: selectedCardForDetails?.id
+                    ? String(selectedCardForDetails.id)
+                    : cards[0]?.id
+                    ? String(cards[0].id)
+                    : '',
+                  isParcelado: true,
+                  totalParcelas: '2',
+                  parcelaInicial: '1'
+                }));
+                setShowAddTxModal(true);
+              }}
               onDeleteCard={handleDeleteCard}
               onDeleteSingleTx={handleDeleteSingleTx}
             />
@@ -1856,22 +1887,84 @@ export default function App() {
                   </div>
 
                   {newTxForm.isParcelado && (
-                    <div>
-                      <label className="text-xs text-purple-300 font-semibold block mb-1">
-                        Número de Parcelas
-                      </label>
-                      <select
-                        value={newTxForm.totalParcelas}
-                        onChange={e => setNewTxForm({ ...newTxForm, totalParcelas: e.target.value })}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 focus:outline-none"
-                      >
-                        {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24].map(n => (
-                          <option key={n} value={n}>{n}x vezes</option>
-                        ))}
-                      </select>
-                      <p className="text-[10px] text-purple-400 mt-1">
-                        O valor informado será dividido igualmente entre {newTxForm.totalParcelas} meses consecutivos.
-                      </p>
+                    <div className="space-y-3 pt-1 border-t border-purple-500/20">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-purple-300 font-semibold block mb-1">
+                            Total de Parcelas
+                          </label>
+                          <select
+                            value={newTxForm.totalParcelas}
+                            onChange={e => {
+                              const newTotal = parseInt(e.target.value, 10);
+                              const curInit = parseInt(newTxForm.parcelaInicial, 10) || 1;
+                              setNewTxForm({
+                                ...newTxForm,
+                                totalParcelas: e.target.value,
+                                parcelaInicial: curInit > newTotal ? String(newTotal) : newTxForm.parcelaInicial
+                              });
+                            }}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 focus:outline-none"
+                          >
+                            {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 36, 48].map(n => (
+                              <option key={n} value={n}>{n}x vezes</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-purple-300 font-semibold block mb-1">
+                            Começar na Parcela
+                          </label>
+                          <select
+                            value={newTxForm.parcelaInicial}
+                            onChange={e => setNewTxForm({ ...newTxForm, parcelaInicial: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-purple-500 focus:outline-none"
+                          >
+                            {Array.from(
+                              { length: parseInt(newTxForm.totalParcelas, 10) || 2 },
+                              (_, i) => i + 1
+                            ).map(n => (
+                              <option key={n} value={n}>
+                                {n === 1 ? '1ª Parcela (Início)' : `${n}ª Parcela`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Resumo dinâmico da divisão de parcelas */}
+                      {(() => {
+                        const total = parseFloat(newTxForm.saida) || 0;
+                        const totalP = parseInt(newTxForm.totalParcelas, 10) || 1;
+                        const startP = Math.min(totalP, parseInt(newTxForm.parcelaInicial, 10) || 1);
+                        const countToRegister = totalP - startP + 1;
+                        const valParcela = total > 0 ? (total / totalP).toFixed(2) : '0.00';
+
+                        return (
+                          <div className="bg-purple-900/30 rounded-lg p-2.5 border border-purple-500/20 text-[11px] text-purple-200 space-y-1">
+                            <div className="flex justify-between items-center font-medium">
+                              <span>Valor por parcela:</span>
+                              <span className="font-bold text-white font-mono">
+                                R$ {valParcela} / mês
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-purple-300">
+                              <span>Parcelas a lançar:</span>
+                              <span className="font-semibold text-purple-100">
+                                {startP === 1
+                                  ? `${totalP} parcelas (1/${totalP} até ${totalP}/${totalP})`
+                                  : `${countToRegister} parcelas (da ${startP}/${totalP} até ${totalP}/${totalP})`}
+                              </span>
+                            </div>
+                            {startP > 1 && (
+                              <p className="text-[10px] text-amber-300 pt-0.5">
+                                💡 As parcelas anteriores (1 a {startP - 1}) já foram pagas anteriormente e não entrarão no histórico atual.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

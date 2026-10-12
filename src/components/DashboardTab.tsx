@@ -1,11 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Activity, ShieldCheck, TrendingUp, TrendingDown, DollarSign,
-  PieChart, Zap, BarChart3
+  PieChart, Zap, BarChart3, FileText, Download, Printer, Sparkles
 } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
-import { Transaction } from '../types';
+import { Transaction, Card, FixedAccount } from '../types';
 import { MONTHS } from '../constants';
+import { AnalyticalReportModal } from './AnalyticalReportModal';
 
 Chart.register(...registerables);
 
@@ -21,11 +22,18 @@ interface DashboardTabProps {
   incomeExpenseRatio: number;
   financialHealthScore: number;
   historicalComparison: { period: string; income: number; expense: number }[];
+  fixedAccounts?: FixedAccount[];
+  budgets?: Record<string, number>;
+  cards?: Card[];
+  talysonBalance?: number;
+  karlaBalance?: number;
+  consolidatedBalance?: number;
   theme?: 'light' | 'dark';
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   monthlyTransactions,
+  transactions,
   expenseCategories,
   selectedMonth,
   selectedYear,
@@ -35,8 +43,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   incomeExpenseRatio,
   financialHealthScore,
   historicalComparison,
+  fixedAccounts = [],
+  budgets = {},
+  cards = [],
+  talysonBalance = 0,
+  karlaBalance = 0,
+  consolidatedBalance = 0,
   theme = 'dark'
 }) => {
+  const [showReportModal, setShowReportModal] = useState(false);
   const isLight = theme === 'light';
   const categoryChartRef = useRef<HTMLCanvasElement>(null);
   const trendChartRef = useRef<HTMLCanvasElement>(null);
@@ -152,21 +167,40 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center bg-slate-900 border border-indigo-500/30 p-5 rounded-2xl shadow-xl gap-4">
+      <div className={`flex flex-wrap justify-between items-center p-5 rounded-2xl shadow-xl gap-4 border transition-all ${
+        isLight
+          ? 'bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 border-slate-200'
+          : 'bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border-indigo-500/30'
+      }`}>
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Activity className="w-6 h-6 text-indigo-400 animate-pulse" />
+          <h2 className={`text-xl font-bold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+            <Activity className="w-6 h-6 text-indigo-500 animate-pulse" />
             Dashboard Analítico e Inteligência Financeira
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className={`text-xs mt-0.5 font-medium ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
             Visão consolidada, proporção de despesas e projeções para {MONTHS[selectedMonth - 1]} / {selectedYear}
           </p>
         </div>
-        <div className="flex items-center gap-3 bg-slate-950 px-4 py-2.5 rounded-xl border border-indigo-500/20">
-          <ShieldCheck className="w-6 h-6 text-emerald-400" />
-          <div>
-            <span className="text-[10px] uppercase text-slate-400 block font-semibold">Score de Saúde</span>
-            <span className="text-lg font-black text-emerald-400">{financialHealthScore} / 100</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-indigo-500/25 transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
+            title="Visualizar, imprimir ou baixar relatório PDF analítico com gráficos e sugestões"
+          >
+            <FileText className="w-4 h-4 text-indigo-100" />
+            <span>Imprimir / Baixar PDF Analítico</span>
+          </button>
+
+          <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border shadow-sm ${
+            isLight
+              ? 'bg-emerald-50/80 border-emerald-200 text-slate-800'
+              : 'bg-slate-950/90 border-emerald-500/30 text-white'
+          }`}>
+            <ShieldCheck className="w-6 h-6 text-emerald-500" />
+            <div>
+              <span className={`text-[10px] uppercase block font-bold tracking-wider ${isLight ? 'text-emerald-800' : 'text-emerald-400'}`}>Score de Saúde</span>
+              <span className="text-lg font-black text-emerald-500">{financialHealthScore} / 100</span>
+            </div>
           </div>
         </div>
       </div>
@@ -281,6 +315,74 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Banner de Destaque Executivo para Relatório Analítico */}
+      <div className={`rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4 shadow-lg border transition-all ${
+        isLight
+          ? 'bg-slate-100/90 border-slate-300 text-slate-900 shadow-slate-200/50'
+          : 'bg-slate-800/95 border-slate-700 text-slate-100 shadow-slate-950/40'
+      }`}>
+        <div className="flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
+            isLight
+              ? 'bg-slate-200 border border-slate-300 text-slate-800'
+              : 'bg-slate-700 border border-slate-600 text-slate-200'
+          }`}>
+            <FileText className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h3 className={`text-base font-extrabold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+              Relatório Analítico & Projeção Estratégica
+              <span className={`text-[10px] uppercase px-2.5 py-0.5 rounded-full font-black border ${
+                isLight
+                  ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                  : 'bg-indigo-950/80 text-indigo-300 border-indigo-500/40'
+              }`}>
+                PDF A4 Executivo (4 Páginas)
+              </span>
+            </h3>
+            <p className={`text-xs mt-1 max-w-2xl leading-relaxed font-medium ${
+              isLight ? 'text-slate-700' : 'text-slate-300'
+            }`}>
+              Documento analítico completo com demonstrativo de despesas por categoria e titular, diagnóstico 50/30/20, faturas de cartão, orientações estratégicas e folha completa com todas as movimentações do mês.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Visualizar / Baixar Relatório PDF</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Modal do Relatório Analítico */}
+      <AnalyticalReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        monthlyTransactions={monthlyTransactions}
+        transactions={transactions}
+        expenseCategories={expenseCategories}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        selectedPeriodKey={selectedPeriodKey}
+        monthlyIncome={monthlyIncome}
+        monthlyExpensesTotal={monthlyExpensesTotal}
+        incomeExpenseRatio={incomeExpenseRatio}
+        financialHealthScore={financialHealthScore}
+        historicalComparison={historicalComparison}
+        fixedAccounts={fixedAccounts}
+        budgets={budgets}
+        cards={cards}
+        talysonBalance={talysonBalance}
+        karlaBalance={karlaBalance}
+        consolidatedBalance={consolidatedBalance}
+        theme={theme}
+      />
     </div>
   );
 };
