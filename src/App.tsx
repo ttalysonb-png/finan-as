@@ -369,6 +369,37 @@ export default function App() {
     );
   };
 
+  const getCardFutureTransactions = (cardId: number) => {
+    return transactions
+      .filter(
+        t =>
+          t.operacao === 'Crédito' &&
+          Number(t.cartaoId) === Number(cardId) &&
+          t.data &&
+          getTransactionInvoicePeriod(t.data) > selectedPeriodKey
+      )
+      .sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+  };
+
+  const getCardFutureCommitted = (cardId: number) => {
+    return getCardFutureTransactions(cardId).reduce((sum, t) => sum + (Number(t.saída) || 0), 0);
+  };
+
+  const getCardUnpaidPastInvoices = (cardId: number) => {
+    const cardAccount = fixedAccounts.find(a => a.isCartao && Number(a.cartaoId) === Number(cardId));
+    if (!cardAccount || !cardAccount.installments) return 0;
+    return cardAccount.installments
+      .filter(inst => inst.periodo < selectedPeriodKey && inst.status !== 'pago')
+      .reduce((sum, inst) => sum + (Number(inst.valor) || 0), 0);
+  };
+
+  const getCardTotalCommitted = (cardId: number, baseValue: number) => {
+    const invoice = getCardInvoice(cardId, baseValue);
+    const future = getCardFutureCommitted(cardId);
+    const unpaidPast = getCardUnpaidPastInvoices(cardId);
+    return invoice + future + unpaidPast;
+  };
+
   const totalFaturasCartoes = useMemo(() => {
     return cards.reduce((acc, c) => acc + getCardInvoice(c.id, c.faturaAtual), 0);
   }, [cards, transactions, selectedPeriodKey]);
@@ -1750,6 +1781,9 @@ export default function App() {
               cardSpreadsheetMode={cardSpreadsheetMode}
               getCardInvoice={getCardInvoice}
               getCardTransactionsForPeriod={getCardTransactionsForPeriod}
+              getCardFutureTransactions={getCardFutureTransactions}
+              getCardFutureCommitted={getCardFutureCommitted}
+              getCardTotalCommitted={getCardTotalCommitted}
               onSetSelectedCardForDetails={setSelectedCardForDetails}
               onSetCardSpreadsheetMode={setCardSpreadsheetMode}
               onOpenAddCard={() => setShowAddCard(true)}
