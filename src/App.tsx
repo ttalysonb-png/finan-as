@@ -7,7 +7,7 @@ import {
 import { supabase } from './lib/supabase';
 import {
   Transaction, Card, Budget, FixedAccount, FixedAccountInstallment,
-  ActiveTab, PaymentStatus, FixedAccountNature
+  ActiveTab, PaymentStatus, FixedAccountNature, ReserveGoal, ReserveTransaction
 } from './types';
 import {
   MONTHS, DEFAULT_CATEGORIES_MAP, addMonthsToDate, addMonthsToPeriod,
@@ -19,9 +19,104 @@ import { FixedAccountsTab } from './components/FixedAccountsTab';
 import { DashboardTab } from './components/DashboardTab';
 import { BudgetsTab } from './components/BudgetsTab';
 import { CardsTab } from './components/CardsTab';
+import { ReservesTab } from './components/ReservesTab';
 import { MigrationsModal } from './components/MigrationsModal';
 import { AddFixedAccountModal } from './components/AddFixedAccountModal';
 import { PayFixedAccountModal } from './components/PayFixedAccountModal';
+
+const DEFAULT_RESERVE_GOALS: ReserveGoal[] = [
+  {
+    id: 'res_emerg_padrao',
+    nome: 'Reserva de Emergência Essencial',
+    tipo: 'emergencia',
+    categoria: 'Emergência',
+    valorAtual: 6000,
+    valorMeta: 18000,
+    mesesCustoFixo: 6,
+    contaOndeEsta: 'Nubank Caixinha (100% CDI) / Tesouro Selic',
+    rendimentoEstimado: 10.75,
+    cor: 'from-emerald-500 to-teal-700',
+    icone: 'ShieldCheck',
+    descricao: 'Colchão de segurança para imprevistos médicos, manutenções emergenciais ou tranquilidade financeira.',
+    criadoEm: '2025-01-01',
+    historico: [
+      {
+        id: 'tx_init_1',
+        data: '2025-01-10',
+        tipo: 'deposito',
+        valor: 4000,
+        nota: 'Aporte inicial de reserva',
+        contaOrigemDestino: 'Conta Talyson'
+      },
+      {
+        id: 'tx_init_2',
+        data: '2025-02-15',
+        tipo: 'deposito',
+        valor: 2000,
+        nota: 'Aporte mensal de segurança',
+        contaOrigemDestino: 'Ambos'
+      }
+    ]
+  },
+  {
+    id: 'res_viagem_ferias',
+    nome: 'Viagem de Férias em Família',
+    tipo: 'objetivo',
+    categoria: 'Viagem',
+    valorAtual: 2800,
+    valorMeta: 6500,
+    dataAlvo: '2025-12-20',
+    contaOndeEsta: 'Caixinha Viagem Nubank',
+    rendimentoEstimado: 10.5,
+    cor: 'from-indigo-500 to-blue-700',
+    icone: 'Plane',
+    descricao: 'Passagens, hospedagem e passeios para as férias.',
+    criadoEm: '2025-01-15',
+    historico: [
+      {
+        id: 'tx_viagem_1',
+        data: '2025-01-20',
+        tipo: 'deposito',
+        valor: 1800,
+        nota: 'Início da caixinha de viagem',
+        contaOrigemDestino: 'Conta Karla'
+      },
+      {
+        id: 'tx_viagem_2',
+        data: '2025-02-20',
+        tipo: 'deposito',
+        valor: 1000,
+        nota: 'Aporte mensal',
+        contaOrigemDestino: 'Conta Karla'
+      }
+    ]
+  },
+  {
+    id: 'res_troca_veiculo',
+    nome: 'Troca de Veículo / Entrada',
+    tipo: 'objetivo',
+    categoria: 'Veículo',
+    valorAtual: 4200,
+    valorMeta: 15000,
+    dataAlvo: '2026-06-30',
+    contaOndeEsta: 'CDB Sofisa 110% CDI',
+    rendimentoEstimado: 11.2,
+    cor: 'from-purple-500 to-indigo-700',
+    icone: 'Car',
+    descricao: 'Fundo para troca ou entrada de um novo carro.',
+    criadoEm: '2025-01-10',
+    historico: [
+      {
+        id: 'tx_carro_1',
+        data: '2025-01-15',
+        tipo: 'deposito',
+        valor: 4200,
+        nota: 'Saldo guardado para entrada',
+        contaOrigemDestino: 'Conta Talyson'
+      }
+    ]
+  }
+];
 
 export default function App() {
   const currentDate = new Date();
@@ -35,6 +130,26 @@ export default function App() {
   const [budgets, setBudgets] = useState<Record<string, number>>({});
   const [cards, setCards] = useState<Card[]>([]);
   const [fixedAccounts, setFixedAccounts] = useState<FixedAccount[]>([]);
+  const [reserveGoals, setReserveGoals] = useState<ReserveGoal[]>(() => {
+    try {
+      const saved = localStorage.getItem('fin_reserve_goals');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar reservas locais:', e);
+    }
+    return DEFAULT_RESERVE_GOALS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fin_reserve_goals', JSON.stringify(reserveGoals));
+    } catch (e) {
+      console.warn('Erro ao salvar reservas locais:', e);
+    }
+  }, [reserveGoals]);
 
   // Modos de Tabela
   const [spreadsheetMode, setSpreadsheetMode] = useState(false);
@@ -286,6 +401,37 @@ export default function App() {
         if (localBackup) {
           setFixedAccounts(JSON.parse(localBackup));
         }
+      }
+
+      // Carregar Reservas e Objetivos do Supabase se tabela existir
+      try {
+        const { data: resData, error: resErr } = await supabase
+          .from('reserve_goals')
+          .select('*');
+
+        if (!resErr && resData && resData.length > 0) {
+          const loadedRes: ReserveGoal[] = resData.map(r => ({
+            id: r.id,
+            nome: r.nome,
+            tipo: r.tipo || 'objetivo',
+            categoria: r.categoria || 'Outro',
+            valorAtual: Number(r.valor_atual) || 0,
+            valorMeta: Number(r.valor_meta) || 0,
+            mesesCustoFixo: r.meses_custo_fixo,
+            dataAlvo: r.data_alvo,
+            contaOndeEsta: r.conta_onde_esta,
+            rendimentoEstimado: r.rendimento_estimado ? Number(r.rendimento_estimado) : undefined,
+            cor: r.cor,
+            icone: r.icone,
+            descricao: r.descricao,
+            criadoEm: r.created_at ? r.created_at.split('T')[0] : '2025-01-01',
+            historico: Array.isArray(r.historico) ? r.historico : []
+          }));
+          setReserveGoals(loadedRes);
+          localStorage.setItem('fin_reserve_goals', JSON.stringify(loadedRes));
+        }
+      } catch (e) {
+        // Fallback para os dados do localStorage já carregados
       }
     } catch (err) {
       console.error('Erro ao carregar dados do Supabase:', err);
@@ -1565,6 +1711,183 @@ export default function App() {
     setCustomModal({ isOpen: false, type: '', categoryTarget: '', name: '' });
   };
 
+  // =========================================================================
+  // GESTÃO DE RESERVAS DE EMERGÊNCIA & OBJETIVOS ESPECÍFICOS (CAIXINHAS)
+  // =========================================================================
+
+  const monthlyExpensesEstimate = useMemo(() => {
+    if (monthlyExpensesTotal > 0) return monthlyExpensesTotal;
+    if (totalExpensePlanned > 0) return totalExpensePlanned;
+    return 3000;
+  }, [monthlyExpensesTotal, totalExpensePlanned]);
+
+  const handleSaveReserveGoal = async (goalToSave: ReserveGoal) => {
+    setReserveGoals(prev => {
+      const exists = prev.some(g => g.id === goalToSave.id);
+      if (exists) {
+        return prev.map(g => (g.id === goalToSave.id ? goalToSave : g));
+      }
+      return [goalToSave, ...prev];
+    });
+
+    try {
+      await supabase.from('reserve_goals').upsert({
+        id: goalToSave.id,
+        nome: goalToSave.nome,
+        tipo: goalToSave.tipo,
+        categoria: goalToSave.categoria,
+        valor_atual: goalToSave.valorAtual,
+        valor_meta: goalToSave.valorMeta,
+        meses_custo_fixo: goalToSave.mesesCustoFixo || null,
+        data_alvo: goalToSave.dataAlvo || null,
+        conta_onde_esta: goalToSave.contaOndeEsta || null,
+        rendimento_estimado: goalToSave.rendimentoEstimado || null,
+        cor: goalToSave.cor,
+        icone: goalToSave.icone,
+        descricao: goalToSave.descricao || null,
+        historico: goalToSave.historico || []
+      });
+    } catch (e) {
+      // Salvo no localStorage com sucesso
+    }
+
+    showToast(
+      goalToSave.tipo === 'emergencia'
+        ? 'Reserva de Emergência salva com sucesso!'
+        : 'Objetivo salvo com sucesso!'
+    );
+  };
+
+  const handleDeleteReserveGoal = async (goalId: string) => {
+    setReserveGoals(prev => prev.filter(g => g.id !== goalId));
+    try {
+      await supabase.from('reserve_goals').delete().eq('id', goalId);
+    } catch (e) {
+      // Deletado localmente
+    }
+    showToast('Caixinha removida com sucesso.');
+  };
+
+  const handleRecordReserveTransaction = async (
+    goalId: string,
+    txData: Omit<ReserveTransaction, 'id'>,
+    syncGeneralTx: boolean = false
+  ) => {
+    const newTx: ReserveTransaction = {
+      id: `res_tx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      ...txData
+    };
+
+    let updatedGoal: ReserveGoal | null = null;
+
+    setReserveGoals(prev =>
+      prev.map(goal => {
+        if (goal.id !== goalId) return goal;
+        const nextVal =
+          txData.tipo === 'deposito'
+            ? goal.valorAtual + txData.valor
+            : Math.max(0, goal.valorAtual - txData.valor);
+        const next = {
+          ...goal,
+          valorAtual: nextVal,
+          historico: [newTx, ...(goal.historico || [])]
+        };
+        updatedGoal = next;
+        return next;
+      })
+    );
+
+    // Persiste no Supabase se disponível
+    if (updatedGoal) {
+      try {
+        await supabase.from('reserve_goals').upsert({
+          id: (updatedGoal as ReserveGoal).id,
+          nome: (updatedGoal as ReserveGoal).nome,
+          tipo: (updatedGoal as ReserveGoal).tipo,
+          categoria: (updatedGoal as ReserveGoal).categoria,
+          valor_atual: (updatedGoal as ReserveGoal).valorAtual,
+          valor_meta: (updatedGoal as ReserveGoal).valorMeta,
+          meses_custo_fixo: (updatedGoal as ReserveGoal).mesesCustoFixo || null,
+          data_alvo: (updatedGoal as ReserveGoal).dataAlvo || null,
+          conta_onde_esta: (updatedGoal as ReserveGoal).contaOndeEsta || null,
+          rendimento_estimado: (updatedGoal as ReserveGoal).rendimentoEstimado || null,
+          cor: (updatedGoal as ReserveGoal).cor,
+          icone: (updatedGoal as ReserveGoal).icone,
+          descricao: (updatedGoal as ReserveGoal).descricao || null,
+          historico: (updatedGoal as ReserveGoal).historico || []
+        });
+      } catch (e) {
+        // Ignora
+      }
+    }
+
+    showToast(
+      txData.tipo === 'deposito'
+        ? `Aporte de R$ ${txData.valor.toFixed(2)} registrado com sucesso!`
+        : `Resgate de R$ ${txData.valor.toFixed(2)} registrado com sucesso!`
+    );
+
+    // Se solicitado, sincroniza também no extrato de lançamentos gerais
+    if (syncGeneralTx) {
+      const isDeposit = txData.tipo === 'deposito';
+      const targetGoal = reserveGoals.find(g => g.id === goalId);
+      const goalTitle = targetGoal ? targetGoal.nome : 'Reserva';
+
+      const txPayload = {
+        data: txData.data,
+        origem: targetGoal?.tipo === 'emergencia' ? 'Reserva de Emergência' : 'Objetivos & Metas',
+        classificacao: isDeposit ? `Aporte: ${goalTitle}` : `Resgate: ${goalTitle}`,
+        conta: txData.contaOrigemDestino || 'Conta Talyson',
+        cartao_id: null,
+        entrada: isDeposit ? 0 : txData.valor,
+        saida: isDeposit ? txData.valor : 0,
+        comentario: txData.nota || (isDeposit ? `Aporte em ${goalTitle}` : `Resgate de ${goalTitle}`),
+        individuo: 'Ambos',
+        operacao: 'Transferência'
+      };
+
+      try {
+        const { data, error } = await supabase.from('transactions').insert([txPayload]).select().single();
+        if (!error && data) {
+          setTransactions(prev => [
+            {
+              id: data.id,
+              data: data.data,
+              origem: data.origem,
+              classificacao: data.classificacao,
+              conta: data.conta,
+              cartaoId: null,
+              entrada: Number(data.entrada),
+              saída: Number(data.saida),
+              comentario: data.comentario,
+              individuo: data.individuo,
+              operacao: data.operacao
+            },
+            ...prev
+          ]);
+          showToast('Lançamento sincronizado também no extrato geral!');
+        } else {
+          const localTx: Transaction = {
+            id: Date.now(),
+            data: txData.data,
+            origem: targetGoal?.tipo === 'emergencia' ? 'Reserva de Emergência' : 'Objetivos & Metas',
+            classificacao: isDeposit ? `Aporte: ${goalTitle}` : `Resgate: ${goalTitle}`,
+            conta: txData.contaOrigemDestino || 'Conta Talyson',
+            cartaoId: null,
+            entrada: isDeposit ? 0 : txData.valor,
+            saída: isDeposit ? txData.valor : 0,
+            comentario: txData.nota || (isDeposit ? `Aporte em ${goalTitle}` : `Resgate de ${goalTitle}`),
+            individuo: 'Ambos',
+            operacao: 'Transferência'
+          };
+          setTransactions(prev => [localTx, ...prev]);
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar transação geral:', err);
+      }
+    }
+  };
+
   return (
     <div className={`flex-1 flex flex-col h-screen w-screen overflow-hidden font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-150 ${theme === 'light' ? 'light bg-slate-50 text-slate-900' : 'dark bg-slate-950 text-slate-100'}`}>
       {/* Header e Barra de Navegação */}
@@ -1804,6 +2127,21 @@ export default function App() {
               }}
               onDeleteCard={handleDeleteCard}
               onDeleteSingleTx={handleDeleteSingleTx}
+            />
+          )}
+
+          {/* Aba 6: Reservas de Emergência & Objetivos Específicos */}
+          {financeTab === 'reservas' && (
+            <ReservesTab
+              reserveGoals={reserveGoals}
+              onSaveGoal={handleSaveReserveGoal}
+              onDeleteGoal={handleDeleteReserveGoal}
+              onRecordTransaction={handleRecordReserveTransaction}
+              monthlyExpensesEstimate={monthlyExpensesEstimate}
+              accounts={accounts}
+              selectedMonth={selectedMonth}
+              selectedYear={selectedYear}
+              selectedPeriodKey={selectedPeriodKey}
             />
           )}
         </div>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Wallet, ChevronLeft, ChevronRight, Calendar, RefreshCw,
   BarChart3, Target, CreditCard, Layers, Database, Menu, X,
-  PanelLeftClose, ArrowRight, ShieldCheck, Sun, Moon
+  PanelLeftClose, ArrowRight, ShieldCheck, Sun, Moon, PiggyBank
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { MONTHS } from '../constants';
@@ -92,6 +92,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       label: 'Cartões de Crédito',
       shortLabel: 'Cartões',
       icon: CreditCard,
+      badge: null
+    },
+    {
+      id: 'reservas' as ActiveTab,
+      label: 'Reservas & Metas',
+      shortLabel: 'Reservas',
+      icon: PiggyBank,
       badge: null
     }
   ];
@@ -363,6 +370,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           {tab.id === 'dashboard' && 'Gráficos e evolução mensal'}
                           {tab.id === 'planejamento' && 'Orçamento e limites por categoria'}
                           {tab.id === 'cartoes' && 'Faturas e limites disponíveis'}
+                          {tab.id === 'reservas' && 'Reserva de emergência e metas específicas'}
                         </div>
                       </div>
                     </div>

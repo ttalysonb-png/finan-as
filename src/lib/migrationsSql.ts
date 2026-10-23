@@ -117,4 +117,31 @@ BEGIN
     DROP POLICY IF EXISTS "Allow all for fixed_account_installments" ON public.fixed_account_installments;
     CREATE POLICY "Allow all for fixed_account_installments" ON public.fixed_account_installments FOR ALL USING (true) WITH CHECK (true);
 END $$;
+
+-- 6. Tabela de Reservas de Emergência e Objetivos Específicos (Caixinhas)
+CREATE TABLE IF NOT EXISTS public.reserve_goals (
+    id TEXT PRIMARY KEY,
+    nome TEXT NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'objetivo', -- 'emergencia' ou 'objetivo'
+    categoria TEXT NOT NULL DEFAULT 'Outro',
+    valor_atual NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    valor_meta NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    meses_custo_fixo INTEGER,
+    data_alvo DATE,
+    conta_onde_esta TEXT,
+    rendimento_estimado NUMERIC(6, 2),
+    cor TEXT DEFAULT 'from-indigo-500 to-purple-600',
+    icone TEXT DEFAULT 'Target',
+    descricao TEXT,
+    historico JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.reserve_goals ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Allow all for reserve_goals" ON public.reserve_goals;
+    CREATE POLICY "Allow all for reserve_goals" ON public.reserve_goals FOR ALL USING (true) WITH CHECK (true);
+END $$;
 `;

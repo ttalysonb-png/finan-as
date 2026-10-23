@@ -70,4 +70,31 @@ export interface FixedAccountInstallment {
   observacao?: string;
 }
 
-export type ActiveTab = 'painel' | 'dashboard' | 'planejamento' | 'cartoes' | 'contas_fixas';
+export interface ReserveTransaction {
+  id: string;
+  data: string; // YYYY-MM-DD
+  tipo: 'deposito' | 'resgate';
+  valor: number;
+  nota?: string;
+  contaOrigemDestino?: string;
+}
+
+export interface ReserveGoal {
+  id: string;
+  nome: string;
+  tipo: 'emergencia' | 'objetivo';
+  categoria: string;
+  valorAtual: number;
+  valorMeta: number;
+  mesesCustoFixo?: number;
+  dataAlvo?: string; // YYYY-MM ou YYYY-MM-DD
+  contaOndeEsta?: string;
+  rendimentoEstimado?: number; // % ao ano
+  cor: string;
+  icone: string;
+  descricao?: string;
+  criadoEm: string;
+  historico: ReserveTransaction[];
+}
+
+export type ActiveTab = 'painel' | 'dashboard' | 'planejamento' | 'cartoes' | 'contas_fixas' | 'reservas';
