@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, Calendar, DollarSign, Wallet, FileText } from 'lucide-react';
+import { X, CheckCircle2, Calendar, DollarSign, Wallet, FileText, AlertTriangle, Layers } from 'lucide-react';
 import { FixedAccount, FixedAccountInstallment } from '../types';
 import { MONTHS } from '../constants';
 
@@ -15,11 +15,13 @@ interface PayFixedAccountModalProps {
       contaPagamento: string;
       operacao: string;
       observacao: string;
+      includedInstallmentIds?: (number | string)[];
     }
   ) => Promise<void>;
   account: FixedAccount | null;
   installment: FixedAccountInstallment | null;
   accounts: string[];
+  pastUnpaidInstallments?: FixedAccountInstallment[];
 }
 
 export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
@@ -28,31 +30,51 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
   onConfirmPayment,
   account,
   installment,
-  accounts
+  accounts,
+  pastUnpaidInstallments = []
 }) => {
   const [dataPagamento, setDataPagamento] = useState('');
   const [valorPago, setValorPago] = useState('');
   const [contaPagamento, setContaPagamento] = useState('');
   const [operacao, setOperacao] = useState('Pix');
   const [observacao, setObservacao] = useState('');
+  const [quitarAcumulados, setQuitarAcumulados] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  const pastUnpaidTotal = pastUnpaidInstallments.reduce((sum, inst) => sum + (Number(inst.valor) || 0), 0);
+  const currentInstVal = installment ? Number(installment.valor) || 0 : 0;
+  const totalWithAccumulated = currentInstVal + pastUnpaidTotal;
 
   useEffect(() => {
     if (installment && account) {
       const today = new Date().toISOString().split('T')[0];
       setDataPagamento(installment.dataPagamento || today);
-      setValorPago(String(installment.valor || '0'));
+      
+      const hasPast = pastUnpaidInstallments.length > 0;
+      setQuitarAcumulados(hasPast);
+      
+      const initialVal = hasPast ? (currentInstVal + pastUnpaidTotal) : currentInstVal;
+      setValorPago(String(initialVal || '0'));
       setContaPagamento(installment.contaPagamento || account.conta || accounts[0] || 'Conta Talyson');
       setOperacao('Pix');
       setObservacao(installment.observacao || '');
     }
-  }, [installment, account, accounts]);
+  }, [installment, account, accounts, pastUnpaidInstallments]);
 
   if (!isOpen || !account || !installment) return null;
 
   const [year, month] = installment.periodo.split('-');
   const monthName = MONTHS[parseInt(month, 10) - 1] || installment.periodo;
   const isReceita = account.natureza === 'receita';
+
+  const handleToggleQuitarAcumulados = (checked: boolean) => {
+    setQuitarAcumulados(checked);
+    if (checked) {
+      setValorPago(String(totalWithAccumulated.toFixed(2)));
+    } else {
+      setValorPago(String(currentInstVal.toFixed(2)));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,12 +83,18 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
 
     setSubmitting(true);
     try {
+      const includedIds = [installment.id];
+      if (quitarAcumulados && pastUnpaidInstallments.length > 0) {
+        pastUnpaidInstallments.forEach(p => includedIds.push(p.id));
+      }
+
       await onConfirmPayment(account, installment, {
         dataPagamento,
         valorPago: val,
         contaPagamento,
         operacao,
-        observacao: observacao.trim()
+        observacao: observacao.trim(),
+        includedInstallmentIds: includedIds
       });
       onClose();
     } finally {
@@ -102,19 +130,63 @@ export const PayFixedAccountModal: React.FC<PayFixedAccountModalProps> = ({
           </button>
         </div>
 
-        {/* Resumo do Lançamento */}
-        <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-1.5">
-          <div className="flex justify-between text-slate-400">
-            <span>{isReceita ? 'Data Prevista:' : 'Vencimento Previsto:'}</span>
-            <span className="font-mono text-slate-200">{installment.dataVencimento.split('-').reverse().join('/')}</span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>Categoria / Origem:</span>
-            <span className="font-semibold text-indigo-300">{account.origem} &bull; {account.classificacao}</span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>Valor Previsto:</span>
-            <span className="font-mono font-bold text-emerald-400">R$ {Number(installment.valor).toFixed(2)}</span>
+        {/* Resumo do Lançamento e Alerta de Acumulado */}
+        <div className="space-y-2">
+          {pastUnpaidInstallments.length > 0 && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs space-y-2">
+              <div className="flex items-center gap-2 text-amber-300 font-bold">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Parcelas Anteriores Não Pagas Acumuladas!</span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                Esta conta possui <strong>{pastUnpaidInstallments.length} mês(es) anterior(es)</strong> não pago(s) totalizando <strong>R$ {pastUnpaidTotal.toFixed(2)}</strong> que foram automaticamente acumulados para este mês.
+              </p>
+              <div className="bg-slate-950/80 p-2 rounded-lg text-[10px] font-mono space-y-1">
+                {pastUnpaidInstallments.map(p => (
+                  <div key={p.id} className="flex justify-between text-slate-400">
+                    <span>Mês {p.periodo} (Parcela {p.numeroParcela}/{p.totalParcelas}):</span>
+                    <span className="text-amber-300 font-semibold">R$ {Number(p.valor).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800 font-bold">
+                  <span>Parcela do Mês Atual ({installment.periodo}):</span>
+                  <span className="text-white">R$ {currentInstVal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-400 pt-1 border-t border-slate-800 text-xs font-extrabold">
+                  <span>Total Acumulado a Pagar:</span>
+                  <span>R$ {totalWithAccumulated.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 pt-1 text-slate-200 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={quitarAcumulados}
+                  onChange={e => handleToggleQuitarAcumulados(e.target.checked)}
+                  className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="text-xs font-semibold">
+                  Quitar o valor total acumulado (R$ {totalWithAccumulated.toFixed(2)}) e baixar meses anteriores
+                </span>
+              </label>
+            </div>
+          )}
+
+          <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-1.5">
+            <div className="flex justify-between text-slate-400">
+              <span>{isReceita ? 'Data Prevista:' : 'Vencimento Previsto:'}</span>
+              <span className="font-mono text-slate-200">{installment.dataVencimento.split('-').reverse().join('/')}</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Categoria / Origem:</span>
+              <span className="font-semibold text-indigo-300">{account.origem} &bull; {account.classificacao}</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Valor {pastUnpaidInstallments.length > 0 && quitarAcumulados ? 'Total com Acúmulo' : 'Deste Mês'}:</span>
+              <span className="font-mono font-bold text-emerald-400">
+                R$ {pastUnpaidInstallments.length > 0 && quitarAcumulados ? totalWithAccumulated.toFixed(2) : currentInstVal.toFixed(2)}
+              </span>
+            </div>
           </div>
         </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import {
   Wallet, Megaphone, Plus, Trash2, Edit3, Filter, Download, Upload,
-  PlusCircle, CreditCard, X, AlertTriangle, CheckCircle2
+  PlusCircle, CreditCard, X, AlertTriangle, CheckCircle2, ArrowRight, Layers
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import {
@@ -196,6 +196,7 @@ export default function App() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [payingAccount, setPayingAccount] = useState<FixedAccount | null>(null);
   const [payingInstallment, setPayingInstallment] = useState<FixedAccountInstallment | null>(null);
+  const [payingPastInstallments, setPayingPastInstallments] = useState<FixedAccountInstallment[]>([]);
 
   const [showAddTxModal, setShowAddTxModal] = useState(false);
   const [showAddCard, setShowAddCard] = useState(false);
@@ -470,28 +471,156 @@ export default function App() {
     return transactions.filter(t => t.data && t.data.startsWith(selectedPeriodKey));
   }, [transactions, selectedPeriodKey, showAllMonths]);
 
-  // Cálculos de Saldos
-  const talysonBalance = useMemo(() => {
-    return transactions
-      .filter(t => t.conta === 'Conta Talyson')
-      .reduce((acc, t) => {
-        const entrada = Number(t.entrada) || 0;
-        const saida = t.operacao === 'Crédito' ? 0 : (Number(t.saída) || 0);
-        return acc + entrada - saida;
-      }, 0.0);
-  }, [transactions]);
+  // Helpers para navegação de períodos no formato 'YYYY-MM'
+  const getNextPeriodKey = (period: string) => {
+    const [yStr, mStr] = period.split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    if (m === 12) return `${y + 1}-01`;
+    return `${y}-${String(m + 1).padStart(2, '0')}`;
+  };
 
-  const karlaBalance = useMemo(() => {
-    return transactions
-      .filter(t => t.conta === 'Conta Karla')
-      .reduce((acc, t) => {
-        const entrada = Number(t.entrada) || 0;
-        const saida = t.operacao === 'Crédito' ? 0 : (Number(t.saída) || 0);
-        return acc + entrada - saida;
-      }, 0.0);
-  }, [transactions]);
+  const getPrevPeriodKey = (period: string) => {
+    const [yStr, mStr] = period.split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    if (m === 1) return `${y - 1}-12`;
+    return `${y}-${String(m - 1).padStart(2, '0')}`;
+  };
 
+  // Coleta cronológica de todos os períodos conhecidos (passados, atual e futuro próximo)
+  const allChronologicalPeriods = useMemo(() => {
+    const set = new Set<string>();
+    set.add(selectedPeriodKey);
+    set.add(getPrevPeriodKey(selectedPeriodKey));
+    set.add(getNextPeriodKey(selectedPeriodKey));
+    transactions.forEach(t => {
+      if (t.data && t.data.length >= 7) {
+        set.add(t.data.substring(0, 7));
+      }
+    });
+    fixedAccounts.forEach(a => {
+      (a.installments || []).forEach(i => {
+        if (i.periodo) set.add(i.periodo);
+      });
+    });
+    return Array.from(set).sort();
+  }, [transactions, fixedAccounts, selectedPeriodKey]);
+
+  // Cálculos de Saldos Cronológicos Mensais:
+  // Regra:
+  // - Se o saldo final do mês for POSITIVO, acumula para o mês seguinte como saldo inicial.
+  // - Se o saldo final do mês for NEGATIVO, zera o saldo no final do mês (saldo inicial do mês seguinte = 0)
+  //   e o valor devedor se transforma em uma Conta Fixa a pagar no mês seguinte!
+  const computeAccountLedger = (accName: string) => {
+    let runningCarryover = 0;
+    const ledgerMap: Record<
+      string,
+      {
+        periodo: string;
+        saldoInicial: number;
+        entradas: number;
+        saidas: number;
+        netMes: number;
+        saldoSemZerar: number;
+        saldoFinalFechado: number;
+        deficitGerado: number;
+      }
+    > = {};
+
+    for (const p of allChronologicalPeriods) {
+      const pTxs = transactions.filter(t => t.conta === accName && t.data && t.data.startsWith(p));
+      const entradas = pTxs.reduce((sum, t) => sum + (Number(t.entrada) || 0), 0);
+      const saidas = pTxs.reduce((sum, t) => sum + (t.operacao === 'Crédito' ? 0 : (Number(t.saída) || 0)), 0);
+      const netMes = entradas - saidas;
+      const saldoInicial = runningCarryover;
+      const saldoSemZerar = saldoInicial + netMes;
+
+      let saldoFinalFechado = saldoSemZerar;
+      let deficitGerado = 0;
+
+      if (saldoSemZerar >= 0) {
+        saldoFinalFechado = saldoSemZerar;
+        deficitGerado = 0;
+        runningCarryover = saldoSemZerar; // Positivo: acumula para o mês seguinte
+      } else {
+        saldoFinalFechado = 0; // Negativo: zera no final do mês
+        deficitGerado = Math.abs(saldoSemZerar);
+        runningCarryover = 0; // Zera para o próximo mês
+      }
+
+      ledgerMap[p] = {
+        periodo: p,
+        saldoInicial,
+        entradas,
+        saidas,
+        netMes,
+        saldoSemZerar,
+        saldoFinalFechado,
+        deficitGerado
+      };
+    }
+
+    return ledgerMap;
+  };
+
+  const talysonLedger = useMemo(() => computeAccountLedger('Conta Talyson'), [allChronologicalPeriods, transactions]);
+  const karlaLedger = useMemo(() => computeAccountLedger('Conta Karla'), [allChronologicalPeriods, transactions]);
+
+  const talysonCurrentLedger = talysonLedger[selectedPeriodKey] || {
+    periodo: selectedPeriodKey,
+    saldoInicial: 0,
+    entradas: 0,
+    saidas: 0,
+    netMes: 0,
+    saldoSemZerar: 0,
+    saldoFinalFechado: 0,
+    deficitGerado: 0
+  };
+
+  const karlaCurrentLedger = karlaLedger[selectedPeriodKey] || {
+    periodo: selectedPeriodKey,
+    saldoInicial: 0,
+    entradas: 0,
+    saidas: 0,
+    netMes: 0,
+    saldoSemZerar: 0,
+    saldoFinalFechado: 0,
+    deficitGerado: 0
+  };
+
+  const talysonBalance = talysonCurrentLedger.saldoSemZerar;
+  const karlaBalance = karlaCurrentLedger.saldoSemZerar;
   const consolidatedBalance = talysonBalance + karlaBalance;
+
+  const talysonCarryover = talysonCurrentLedger.saldoInicial;
+  const karlaCarryover = karlaCurrentLedger.saldoInicial;
+  const consolidatedCarryover = talysonCarryover + karlaCarryover;
+
+  const prevPeriodKey = getPrevPeriodKey(selectedPeriodKey);
+  const nextPeriodKey = getNextPeriodKey(selectedPeriodKey);
+
+  const prevTalysonLedger = talysonLedger[prevPeriodKey];
+  const prevKarlaLedger = karlaLedger[prevPeriodKey];
+
+  // Verifica se já existe conta fixa de déficit criada para o mês seguinte
+  const talysonNextDeficitExists = useMemo(() => {
+    return fixedAccounts.some(
+      fa =>
+        fa.nome.toLowerCase().includes('déficit') &&
+        fa.nome.toLowerCase().includes('talyson') &&
+        (fa.installments || []).some(i => i.periodo === nextPeriodKey)
+    );
+  }, [fixedAccounts, nextPeriodKey]);
+
+  const karlaNextDeficitExists = useMemo(() => {
+    return fixedAccounts.some(
+      fa =>
+        fa.nome.toLowerCase().includes('déficit') &&
+        fa.nome.toLowerCase().includes('karla') &&
+        (fa.installments || []).some(i => i.periodo === nextPeriodKey)
+    );
+  }, [fixedAccounts, nextPeriodKey]);
 
   // Fatura de Cartão
   const getCardInvoice = (cardId: number, baseValue: number) => {
@@ -1397,10 +1526,13 @@ export default function App() {
       contaPagamento: string;
       operacao: string;
       observacao: string;
+      includedInstallmentIds?: (number | string)[];
     }
   ) => {
     try {
       const isReceita = account.natureza === 'receita';
+      const includedIds = paymentDetails.includedInstallmentIds || [];
+      const hasAccumulated = includedIds.length > 1;
 
       // 1. Cria o Lançamento na tabela `transactions` do histórico
       const txPayload = {
@@ -1411,7 +1543,9 @@ export default function App() {
         cartao_id: account.cartaoId || null,
         entrada: isReceita ? paymentDetails.valorPago : 0,
         saida: isReceita ? 0 : paymentDetails.valorPago,
-        comentario: `${isReceita ? 'Recebimento de Receita' : 'Pagamento Conta Fixa'}: ${account.nome} (${installment.numeroParcela}/${installment.totalParcelas})${
+        comentario: `${isReceita ? 'Recebimento de Receita' : 'Pagamento Conta Fixa'}: ${account.nome} (${installment.numeroParcela}/${installment.totalParcelas}${
+          hasAccumulated ? ` + ${includedIds.length - 1} acumuladas` : ''
+        })${
           paymentDetails.observacao ? ` - ${paymentDetails.observacao}` : ''
         }`,
         individuo: account.individuo,
@@ -1466,17 +1600,22 @@ export default function App() {
         console.warn('Erro ao inserir transação:', txErr);
       }
 
+      const idsToMarkPaid = new Set<number | string>([
+        installment.id,
+        ...includedIds
+      ]);
+
       // 2. Atualiza a Parcela da Conta Fixa para status 'pago' e vincula o ID da transação
       setFixedAccounts(prev => {
         const next = prev.map(acc => {
           if (acc.id !== account.id) return acc;
           const updatedInsts = (acc.installments || []).map(inst => {
-            if (inst.id === installment.id || (inst.periodo === installment.periodo && !inst.dataPagamento)) {
+            if (idsToMarkPaid.has(inst.id) || (inst.periodo === installment.periodo && !inst.dataPagamento)) {
               return {
                 ...inst,
                 status: 'pago' as PaymentStatus,
                 dataPagamento: paymentDetails.dataPagamento,
-                valor: paymentDetails.valorPago,
+                valor: inst.id === installment.id ? paymentDetails.valorPago : inst.valor,
                 contaPagamento: paymentDetails.contaPagamento,
                 transactionId: newTxId,
                 observacao: paymentDetails.observacao
@@ -1490,20 +1629,20 @@ export default function App() {
         return next;
       });
 
-      // Tenta atualizar no Supabase a parcela
+      // Tenta atualizar no Supabase todas as parcelas incluídas
       try {
-        if (typeof installment.id === 'number') {
+        const numericIds = Array.from(idsToMarkPaid).filter((id): id is number => typeof id === 'number');
+        if (numericIds.length > 0) {
           await supabase
             .from('fixed_account_installments')
             .update({
               status: 'pago',
               data_pagamento: paymentDetails.dataPagamento,
-              valor: paymentDetails.valorPago,
               conta_pagamento: paymentDetails.contaPagamento,
               transaction_id: newTxId,
               observacao: paymentDetails.observacao
             })
-            .eq('id', installment.id);
+            .in('id', numericIds);
         }
       } catch (updErr) {
         console.warn('Atualização da parcela salva em cache local');
@@ -1517,6 +1656,218 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao registrar:', err);
       showToast('Erro ao processar o registro.', 'error');
+    }
+  };
+
+  // Cancelar Conta Fixa (desativa e marca parcelas pendentes como canceladas)
+  const handleCancelFixedAccount = async (accountId: number) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Cancelar Conta Fixa',
+      message:
+        'Deseja cancelar esta conta fixa? Ela será desativada, não acumulará mais nos meses seguintes e suas parcelas pendentes serão canceladas.',
+      onConfirm: async () => {
+        try {
+          setFixedAccounts(prev => {
+            const next = prev.map(acc => {
+              if (acc.id !== accountId) return acc;
+              const updatedInsts = (acc.installments || []).map(inst => {
+                if (inst.status !== 'pago') {
+                  return { ...inst, status: 'cancelado' as PaymentStatus };
+                }
+                return inst;
+              });
+              return { ...acc, ativo: false, installments: updatedInsts };
+            });
+            localStorage.setItem('fixed_accounts_backup', JSON.stringify(next));
+            return next;
+          });
+
+          try {
+            await supabase.from('fixed_accounts').update({ ativo: false }).eq('id', accountId);
+            await supabase
+              .from('fixed_account_installments')
+              .update({ status: 'cancelado' })
+              .eq('fixed_account_id', accountId)
+              .neq('status', 'pago');
+          } catch (e) {
+            console.warn('Atualizado no cache local');
+          }
+
+          showToast('Conta fixa cancelada com sucesso!');
+        } catch (err) {
+          showToast('Erro ao cancelar conta fixa.', 'error');
+        } finally {
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+        }
+      }
+    });
+  };
+
+  // Dispensar / Cancelar parcelas atrasadas acumuladas de uma conta fixa
+  const handleCancelPastAccumulated = async (
+    account: FixedAccount,
+    pastInstallments: FixedAccountInstallment[]
+  ) => {
+    if (!pastInstallments || pastInstallments.length === 0) return;
+    const pastIds = pastInstallments.map(i => i.id);
+    const periodsList = pastInstallments.map(i => i.periodo).join(', ');
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Dispensar Parcelas Atrasadas',
+      message: `Deseja dispensar o acúmulo das parcelas atrasadas (${periodsList}) de "${account.nome}"? Elas serão marcadas como canceladas e não acumularão mais neste mês nem nos futuros.`,
+      onConfirm: async () => {
+        try {
+          setFixedAccounts(prev => {
+            const next = prev.map(acc => {
+              if (acc.id !== account.id) return acc;
+              const updatedInsts = (acc.installments || []).map(inst => {
+                if (pastIds.includes(inst.id) || (inst.periodo < selectedPeriodKey && inst.status !== 'pago')) {
+                  return { ...inst, status: 'cancelado' as PaymentStatus };
+                }
+                return inst;
+              });
+              return { ...acc, installments: updatedInsts };
+            });
+            localStorage.setItem('fixed_accounts_backup', JSON.stringify(next));
+            return next;
+          });
+
+          try {
+            const numericIds = pastIds.filter((id): id is number => typeof id === 'number');
+            if (numericIds.length > 0) {
+              await supabase
+                .from('fixed_account_installments')
+                .update({ status: 'cancelado' })
+                .in('id', numericIds);
+            }
+          } catch (e) {
+            console.warn('Atualizado no cache local');
+          }
+
+          showToast(`Parcelas atrasadas de "${account.nome}" dispensadas com sucesso!`);
+        } catch (err) {
+          showToast('Erro ao dispensar parcelas atrasadas.', 'error');
+        } finally {
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+        }
+      }
+    });
+  };
+
+  // Transforma déficit de saldo negativo do final do mês em Conta Fixa para o mês seguinte
+  const handleTransformNegativeBalanceToFixedAccount = async (
+    contaName: string,
+    deficitValue: number,
+    fromPeriod: string
+  ) => {
+    if (deficitValue <= 0) return;
+    const targetPeriod = getNextPeriodKey(fromPeriod);
+    const individuo = contaName.includes('Karla')
+      ? 'Karla'
+      : contaName.includes('Talyson')
+      ? 'Talyson'
+      : 'Ambos';
+    const cleanContaName = contaName.replace('Conta ', '');
+    const accountName = `Déficit Saldo Negativo - ${cleanContaName} (${fromPeriod})`;
+
+    const exists = fixedAccounts.some(
+      fa =>
+        fa.nome.toLowerCase() === accountName.toLowerCase() ||
+        (fa.nome.toLowerCase().includes('déficit') &&
+          fa.nome.toLowerCase().includes(cleanContaName.toLowerCase()) &&
+          (fa.installments || []).some(i => i.periodo === targetPeriod))
+    );
+
+    if (exists) {
+      showToast(`Já existe uma conta fixa de déficit para ${cleanContaName} em ${targetPeriod}.`, 'error');
+      return;
+    }
+
+    const newFaId = Date.now();
+    const instId = Date.now() + 1;
+
+    const payloadAcc = {
+      id: newFaId,
+      nome: accountName,
+      natureza: 'despesa' as FixedAccountNature,
+      origem: 'Dívidas & Empréstimos',
+      classificacao: 'Déficit Mês Anterior',
+      conta: contaName,
+      valor_padrao: deficitValue,
+      dia_vencimento: 10,
+      tipo_valor: 'fixo',
+      meses_duracao: 1,
+      mes_inicio: targetPeriod,
+      is_cartao: false,
+      cartao_id: null,
+      individuo: individuo,
+      ativo: true,
+      observacao: `Déficit gerado pelo saldo negativo de ${fromPeriod}`
+    };
+
+    const payloadInst = {
+      id: instId,
+      fixed_account_id: newFaId,
+      numero_parcela: 1,
+      total_parcelas: 1,
+      periodo: targetPeriod,
+      data_vencimento: `${targetPeriod}-10`,
+      valor: deficitValue,
+      status: 'pendente' as PaymentStatus,
+      observacao: `Déficit automático gerado pelo saldo negativo de ${fromPeriod} (R$ ${deficitValue.toFixed(2)})`
+    };
+
+    try {
+      try {
+        await supabase.from('fixed_accounts').insert([payloadAcc]);
+        await supabase.from('fixed_account_installments').insert([payloadInst]);
+      } catch (err) {
+        console.warn('Salvo localmente no backup');
+      }
+
+      const newAccountObj: FixedAccount = {
+        id: newFaId,
+        nome: accountName,
+        natureza: 'despesa',
+        origem: 'Dívidas & Empréstimos',
+        classificacao: 'Déficit Mês Anterior',
+        conta: contaName,
+        valorPadrao: deficitValue,
+        diaVencimento: 10,
+        tipoValor: 'fixo',
+        mesesDuracao: 1,
+        mesInicio: targetPeriod,
+        isCartao: false,
+        cartaoId: null,
+        individuo: individuo,
+        ativo: true,
+        observacao: `Déficit gerado pelo saldo negativo de ${fromPeriod}`,
+        installments: [
+          {
+            id: instId,
+            fixedAccountId: newFaId,
+            numeroParcela: 1,
+            totalParcelas: 1,
+            periodo: targetPeriod,
+            dataVencimento: `${targetPeriod}-10`,
+            valor: deficitValue,
+            status: 'pendente',
+            observacao: `Déficit gerado do saldo negativo de ${fromPeriod}`
+          }
+        ]
+      };
+
+      setFixedAccounts(prev => {
+        const next = [newAccountObj, ...prev];
+        localStorage.setItem('fixed_accounts_backup', JSON.stringify(next));
+        return next;
+      });
+
+      showToast(`Conta Fixa de déficit (R$ ${deficitValue.toFixed(2)}) criada para ${targetPeriod}!`);
+    } catch (e) {
+      showToast('Erro ao criar conta fixa de déficit.', 'error');
     }
   };
 
@@ -1939,31 +2290,94 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Cards de Saldos */}
+              {/* Cards de Saldos com Acúmulo e Regra de Déficit */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-indigo-500/50 transition-colors shadow-lg">
-                  <p className="text-xs text-slate-400 font-semibold uppercase">Conta Talyson (Total)</p>
-                  <h3 className="text-2xl font-bold text-white mt-1">
+                <div className={`bg-slate-900 border rounded-xl p-5 transition-colors shadow-lg ${
+                  talysonBalance < 0 ? 'border-rose-500/50 bg-rose-950/10' : 'border-slate-800 hover:border-indigo-500/50'
+                }`}>
+                  <div className="flex justify-between items-start">
+                    <p className="text-xs text-slate-400 font-semibold uppercase">Conta Talyson</p>
+                    {talysonCarryover > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                        +Acumulado
+                      </span>
+                    )}
+                  </div>
+                  <h3 className={`text-2xl font-bold mt-1 ${talysonBalance < 0 ? 'text-rose-400' : 'text-white'}`}>
                     R$ {talysonBalance.toFixed(2)}
                   </h3>
-                  <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
+                  <div className="mt-1 space-y-0.5 text-[11px]">
+                    {talysonCarryover > 0 ? (
+                      <p className="text-emerald-400/90 font-medium">
+                        + R$ {talysonCarryover.toFixed(2)} acumulado do mês anterior
+                      </p>
+                    ) : prevTalysonLedger && prevTalysonLedger.deficitGerado > 0 ? (
+                      <p className="text-amber-400/90 font-medium">
+                        Saldo inicial zerado (déficit de R$ {prevTalysonLedger.deficitGerado.toFixed(2)} no mês ant.)
+                      </p>
+                    ) : (
+                      <p className="text-slate-500">Saldo da conta no período</p>
+                    )}
+                    {talysonBalance < 0 && (
+                      <p className="text-rose-400 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        Déficit: zera no fim do mês e vira Conta Fixa
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-purple-500/50 transition-colors shadow-lg">
-                  <p className="text-xs text-slate-400 font-semibold uppercase">Conta Karla (Total)</p>
-                  <h3 className="text-2xl font-bold text-white mt-1">
+                <div className={`bg-slate-900 border rounded-xl p-5 transition-colors shadow-lg ${
+                  karlaBalance < 0 ? 'border-rose-500/50 bg-rose-950/10' : 'border-slate-800 hover:border-purple-500/50'
+                }`}>
+                  <div className="flex justify-between items-start">
+                    <p className="text-xs text-slate-400 font-semibold uppercase">Conta Karla</p>
+                    {karlaCarryover > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">
+                        +Acumulado
+                      </span>
+                    )}
+                  </div>
+                  <h3 className={`text-2xl font-bold mt-1 ${karlaBalance < 0 ? 'text-rose-400' : 'text-white'}`}>
                     R$ {karlaBalance.toFixed(2)}
                   </h3>
-                  <p className="text-[10px] text-slate-500 mt-1">Saldo em Conta</p>
+                  <div className="mt-1 space-y-0.5 text-[11px]">
+                    {karlaCarryover > 0 ? (
+                      <p className="text-purple-400/90 font-medium">
+                        + R$ {karlaCarryover.toFixed(2)} acumulado do mês anterior
+                      </p>
+                    ) : prevKarlaLedger && prevKarlaLedger.deficitGerado > 0 ? (
+                      <p className="text-amber-400/90 font-medium">
+                        Saldo inicial zerado (déficit de R$ {prevKarlaLedger.deficitGerado.toFixed(2)} no mês ant.)
+                      </p>
+                    ) : (
+                      <p className="text-slate-500">Saldo da conta no período</p>
+                    )}
+                    {karlaBalance < 0 && (
+                      <p className="text-rose-400 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        Déficit: zera no fim do mês e vira Conta Fixa
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-5 relative overflow-hidden group shadow-lg">
                   <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                  <p className="text-xs text-indigo-300 font-semibold uppercase relative z-10">Saldo Consolidado</p>
+                  <div className="flex justify-between items-start relative z-10">
+                    <p className="text-xs text-indigo-300 font-semibold uppercase">Saldo Consolidado</p>
+                    {consolidatedCarryover > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium">
+                        +R$ {consolidatedCarryover.toFixed(2)} do mês ant.
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-3xl font-extrabold text-white mt-1 relative z-10">
                     R$ {consolidatedBalance.toFixed(2)}
                   </h3>
-                  <p className="text-[10px] text-indigo-300/70 mt-1 relative z-10">Disponível em Dinheiro/Pix</p>
+                  <p className="text-[11px] text-indigo-300/80 mt-1 relative z-10">
+                    Disponível em Dinheiro/Pix ({MONTHS[selectedMonth - 1]}/{selectedYear})
+                  </p>
                 </div>
 
                 <div className="bg-slate-900 border border-purple-500/30 rounded-xl p-5 hover:border-purple-400/60 transition-colors shadow-lg">
@@ -1973,9 +2387,95 @@ export default function App() {
                   <h3 className="text-2xl font-bold text-purple-300 mt-1">
                     R$ {totalFaturasCartoes.toFixed(2)}
                   </h3>
-                  <p className="text-[10px] text-slate-500 mt-1">Gasto em Crédito no Mês</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Gasto em Crédito no Mês</p>
                 </div>
               </div>
+
+              {/* Banner de Déficit / Fechamento de Mês com Regra de Conversão em Conta Fixa */}
+              {(talysonBalance < 0 || karlaBalance < 0) && (
+                <div className="bg-gradient-to-r from-rose-950/40 via-slate-900 to-indigo-950/30 border border-rose-500/30 rounded-xl p-4 shadow-xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                        <h4 className="text-sm font-bold text-white">
+                          Regra de Fechamento de Mês Ativa (Saldo Negativo &rarr; Conta Fixa)
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                        Conforme sua regra financeira, o saldo que fechar negativo neste mês será <span className="text-rose-300 font-semibold">zerado</span> para não acumular conta devedora nos meses seguintes, e o valor do déficit se transforma em uma <span className="text-indigo-300 font-semibold">Conta Fixa no mês de {nextPeriodKey}</span> para ser pago.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {talysonBalance < 0 && (
+                        talysonNextDeficitExists ? (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+                            <CheckCircle2 className="w-4 h-4" /> Conta Fixa Déficit Talyson já criada ({nextPeriodKey})
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              handleTransformNegativeBalanceToFixedAccount(
+                                'Conta Talyson',
+                                Math.abs(talysonBalance),
+                                selectedPeriodKey
+                              )
+                            }
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors shadow"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            Gerar Conta Fixa Talyson (R$ {Math.abs(talysonBalance).toFixed(2)}) em {nextPeriodKey}
+                          </button>
+                        )
+                      )}
+
+                      {karlaBalance < 0 && (
+                        karlaNextDeficitExists ? (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+                            <CheckCircle2 className="w-4 h-4" /> Conta Fixa Déficit Karla já criada ({nextPeriodKey})
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              handleTransformNegativeBalanceToFixedAccount(
+                                'Conta Karla',
+                                Math.abs(karlaBalance),
+                                selectedPeriodKey
+                              )
+                            }
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors shadow"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            Gerar Conta Fixa Karla (R$ {Math.abs(karlaBalance).toFixed(2)}) em {nextPeriodKey}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notificação se o mês anterior fechou com déficit e este mês iniciou zerado */}
+              {((prevTalysonLedger && prevTalysonLedger.deficitGerado > 0) || (prevKarlaLedger && prevKarlaLedger.deficitGerado > 0)) && (
+                <div className="bg-slate-900/80 border border-indigo-500/20 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span>
+                      O mês anterior ({prevPeriodKey}) teve déficit zerado:
+                      {prevTalysonLedger && prevTalysonLedger.deficitGerado > 0 && ` Talyson R$ ${prevTalysonLedger.deficitGerado.toFixed(2)};`}
+                      {prevKarlaLedger && prevKarlaLedger.deficitGerado > 0 && ` Karla R$ ${prevKarlaLedger.deficitGerado.toFixed(2)};`}
+                      {' '}O saldo inicial deste mês ({selectedPeriodKey}) iniciou limpo em R$ 0,00.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setFinanceTab('contas_fixas')}
+                    className="text-indigo-400 hover:text-indigo-300 font-semibold underline underline-offset-2 shrink-0"
+                  >
+                    Ver Contas Fixas
+                  </button>
+                </div>
+              )}
 
               {/* Tabela de Lançamentos do Histórico */}
               <TransactionsTable
@@ -2043,15 +2543,18 @@ export default function App() {
                 setShowAddFixedAccountModal(true);
               }}
               onDeleteAccount={handleDeleteFixedAccount}
-              onOpenPayModal={(account, installment) => {
+              onOpenPayModal={(account, installment, pastUnpaid) => {
                 setPayingAccount(account);
                 setPayingInstallment(installment);
+                setPayingPastInstallments(pastUnpaid || []);
                 setShowPayModal(true);
               }}
               onRevertPayment={handleRevertPayment}
               onQuickUpdateInstallmentValue={handleQuickUpdateInstallmentValue}
               onOpenMigrationsModal={() => setShowMigrationsModal(true)}
               onSyncCardInvoicesToFixedAccounts={handleSyncCardInvoicesToFixedAccounts}
+              onCancelAccount={handleCancelFixedAccount}
+              onCancelPastAccumulated={handleCancelPastAccumulated}
             />
           )}
 
@@ -2180,10 +2683,12 @@ export default function App() {
           setShowPayModal(false);
           setPayingAccount(null);
           setPayingInstallment(null);
+          setPayingPastInstallments([]);
         }}
         onConfirmPayment={handleConfirmPayment}
         account={payingAccount}
         installment={payingInstallment}
+        pastUnpaidInstallments={payingPastInstallments}
         accounts={accounts}
       />
 

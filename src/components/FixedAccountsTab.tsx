@@ -3,10 +3,20 @@ import {
   Calendar, CheckCircle2, Clock, AlertCircle, Plus, Edit3, Trash2,
   DollarSign, CreditCard, Filter, Search, RotateCcw, Check, ArrowRight,
   Database, RefreshCw, FileText, ChevronRight, Layers, Eye,
-  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Wallet
+  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Wallet,
+  AlertTriangle, Ban, XCircle, Info
 } from 'lucide-react';
 import { FixedAccount, FixedAccountInstallment, Card, PaymentStatus, FixedAccountNature } from '../types';
 import { MONTHS, formatCurrency } from '../constants';
+
+export interface MonthlyFixedItem {
+  account: FixedAccount;
+  installment: FixedAccountInstallment;
+  pastUnpaidInstallments: FixedAccountInstallment[];
+  pastUnpaidTotal: number;
+  totalWithPast: number;
+  isOnlyFromPastUnpaid?: boolean;
+}
 
 interface FixedAccountsTabProps {
   fixedAccounts: FixedAccount[];
@@ -18,11 +28,13 @@ interface FixedAccountsTabProps {
   onOpenAddModal: (initialNature?: FixedAccountNature) => void;
   onEditAccount: (account: FixedAccount) => void;
   onDeleteAccount: (accountId: number) => void;
-  onOpenPayModal: (account: FixedAccount, installment: FixedAccountInstallment) => void;
+  onOpenPayModal: (account: FixedAccount, installment: FixedAccountInstallment, pastUnpaid?: FixedAccountInstallment[]) => void;
   onRevertPayment: (account: FixedAccount, installment: FixedAccountInstallment) => Promise<void>;
   onQuickUpdateInstallmentValue: (installmentId: number | string, newValue: number) => Promise<void>;
   onOpenMigrationsModal: () => void;
   onSyncCardInvoicesToFixedAccounts: () => Promise<void>;
+  onCancelAccount?: (accountId: number) => Promise<void>;
+  onCancelPastAccumulated?: (account: FixedAccount, pastInstallments: FixedAccountInstallment[]) => Promise<void>;
 }
 
 export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
@@ -39,7 +51,9 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
   onRevertPayment,
   onQuickUpdateInstallmentValue,
   onOpenMigrationsModal,
-  onSyncCardInvoicesToFixedAccounts
+  onSyncCardInvoicesToFixedAccounts,
+  onCancelAccount,
+  onCancelPastAccumulated
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'despesa' | 'receita' | PaymentStatus | 'cartao'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,26 +63,70 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Coleta as parcelas/meses das contas fixas e previsões para o período atual
+  // Coleta as parcelas/meses das contas fixas e previsões para o período atual (com acúmulo automático de não pagas)
   const monthlyItems = useMemo(() => {
-    const list: { account: FixedAccount; installment: FixedAccountInstallment }[] = [];
+    const list: MonthlyFixedItem[] = [];
 
     fixedAccounts.forEach(acc => {
+      // Se a conta estiver cancelada/inativa, para de ser exibida e de acumular
       if (!acc.ativo) return;
-      const inst = acc.installments?.find(i => i.periodo === selectedPeriodKey);
-      if (inst) {
+
+      // Localiza todas as parcelas anteriores a selectedPeriodKey que NÃO foram pagas nem canceladas
+      const pastUnpaid = (acc.installments || []).filter(
+        i => i.periodo < selectedPeriodKey && i.status !== 'pago' && i.status !== 'cancelado'
+      );
+      const pastTotal = pastUnpaid.reduce((sum, i) => sum + (Number(i.valor) || 0), 0);
+
+      const currentInst = acc.installments?.find(i => i.periodo === selectedPeriodKey);
+
+      if (currentInst) {
         // Checa se está atrasado (se pendente, despesa e vencimento < hoje)
-        let computedStatus = inst.status;
-        if (computedStatus === 'pendente' && inst.dataVencimento < todayStr && acc.natureza !== 'receita') {
+        let computedStatus = currentInst.status;
+        if (computedStatus === 'pendente' && currentInst.dataVencimento < todayStr && acc.natureza !== 'receita') {
           computedStatus = 'atrasado';
         }
+        if (pastUnpaid.length > 0 && computedStatus !== 'pago' && computedStatus !== 'cancelado') {
+          computedStatus = 'atrasado';
+        }
+
+        const effectiveTotal = computedStatus === 'pago'
+          ? (Number(currentInst.valor) || 0)
+          : (Number(currentInst.valor) || 0) + pastTotal;
 
         list.push({
           account: acc,
           installment: {
-            ...inst,
+            ...currentInst,
             status: computedStatus
-          }
+          },
+          pastUnpaidInstallments: pastUnpaid,
+          pastUnpaidTotal: pastTotal,
+          totalWithPast: effectiveTotal,
+          isOnlyFromPastUnpaid: false
+        });
+      } else if (pastUnpaid.length > 0) {
+        // A conta fixa não tem parcela programada neste mês específico, mas tem débitos anteriores NÃO PAGOS!
+        // "AS CONTAS FIXAS DE UM MES, CASO NÃO PAGAS, AUTOMATICAMENTE SE ACUMULE PARA O MES SEGUINTE, ATE O USUARIO FAZER O CANCELAMENTO DELA"
+        const lastUnpaid = pastUnpaid[pastUnpaid.length - 1];
+        const dayStr = String(acc.diaVencimento || 10).padStart(2, '0');
+
+        list.push({
+          account: acc,
+          installment: {
+            id: `virtual_roll_${acc.id}_${selectedPeriodKey}`,
+            fixedAccountId: acc.id,
+            periodo: selectedPeriodKey,
+            numeroParcela: lastUnpaid.numeroParcela,
+            totalParcelas: lastUnpaid.totalParcelas,
+            valor: pastTotal,
+            dataVencimento: `${selectedPeriodKey}-${dayStr}`,
+            status: 'atrasado',
+            observacao: `Acúmulo de ${pastUnpaid.length} mês(es) anterior(es) não pago(s)`
+          },
+          pastUnpaidInstallments: pastUnpaid,
+          pastUnpaidTotal: pastTotal,
+          totalWithPast: pastTotal,
+          isOnlyFromPastUnpaid: true
         });
       }
     });
@@ -87,9 +145,14 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
     [monthlyItems]
   );
 
-  // Cálculos de Despesas
+  // Cálculos de Despesas (considerando acúmulo de meses não pagos)
   const totalDespesasPrevisto = useMemo(() => {
-    return despesasItems.reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+    return despesasItems.reduce((sum, item) => {
+      const val = item.installment.status === 'pago'
+        ? (Number(item.installment.valor) || 0)
+        : (Number(item.totalWithPast) || 0);
+      return sum + val;
+    }, 0);
   }, [despesasItems]);
 
   const totalDespesasPago = useMemo(() => {
@@ -101,13 +164,19 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
   const totalDespesasPendente = useMemo(() => {
     return despesasItems
       .filter(item => item.installment.status === 'pendente')
-      .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+      .reduce((sum, item) => sum + (Number(item.totalWithPast) || 0), 0);
   }, [despesasItems]);
 
   const totalDespesasAtrasado = useMemo(() => {
     return despesasItems
       .filter(item => item.installment.status === 'atrasado')
-      .reduce((sum, item) => sum + (Number(item.installment.valor) || 0), 0);
+      .reduce((sum, item) => sum + (Number(item.totalWithPast) || 0), 0);
+  }, [despesasItems]);
+
+  const totalAcumuladoMesesAnteriores = useMemo(() => {
+    return despesasItems
+      .filter(item => item.installment.status !== 'pago')
+      .reduce((sum, item) => sum + (Number(item.pastUnpaidTotal) || 0), 0);
   }, [despesasItems]);
 
   // Cálculos de Receitas
@@ -148,6 +217,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
       if (statusFilter === 'despesa') return item.account.natureza !== 'receita';
       if (statusFilter === 'receita') return item.account.natureza === 'receita';
       if (statusFilter === 'cartao') return !!item.account.isCartao;
+      if ((statusFilter as string) === 'acumulado') return item.pastUnpaidInstallments.length > 0;
       return item.installment.status === statusFilter;
     });
   }, [monthlyItems, searchTerm, statusFilter]);
@@ -257,9 +327,15 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
             ></div>
           </div>
           <div className="flex justify-between items-center text-[11px] text-slate-400 mt-2">
-            <span>Quitado: <strong className="text-indigo-300">R$ {totalDespesasPago.toFixed(2)}</strong></span>
-            <span>Pendente: <strong className="text-amber-300">R$ {totalDespesasPendente.toFixed(2)}</strong></span>
+            <span>Quitado: <strong className="text-emerald-400">R$ {totalDespesasPago.toFixed(2)}</strong></span>
+            <span>A Pagar: <strong className="text-rose-400">R$ {(totalDespesasPendente + totalDespesasAtrasado).toFixed(2)}</strong></span>
           </div>
+          {totalAcumuladoMesesAnteriores > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] text-amber-300 font-semibold flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Inclui R$ {totalAcumuladoMesesAnteriores.toFixed(2)} de meses anteriores não pagos</span>
+            </div>
+          )}
         </div>
 
         {/* Card 3: Saldo Operacional Previsto */}
@@ -291,7 +367,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
           totalDespesasAtrasado > 0 ? 'border-rose-500/40' : 'border-slate-800'
         }`}>
           <div className="flex justify-between items-center text-rose-400 text-xs font-semibold uppercase">
-            <span>Despesas Vencidas</span>
+            <span>Vencidas & Acumuladas</span>
             <AlertCircle className="w-4 h-4 text-rose-400" />
           </div>
           <h3 className={`text-2xl font-extrabold mt-2 font-mono ${
@@ -299,10 +375,10 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
           }`}>
             R$ {totalDespesasAtrasado.toFixed(2)}
           </h3>
-          <p className="text-[11px] text-slate-500 mt-3">
+          <p className="text-[11px] text-slate-400 mt-3">
             {totalDespesasAtrasado > 0
-              ? 'Existem pagamentos pendentes com prazo vencido'
-              : 'Nenhuma conta em atraso no período'}
+              ? `${totalAcumuladoMesesAnteriores > 0 ? `R$ ${totalAcumuladoMesesAnteriores.toFixed(2)} acumulados de meses anteriores não pagos` : 'Existem pagamentos pendentes com prazo vencido'}`
+              : 'Nenhuma conta em atraso ou acumulada'}
           </p>
         </div>
       </div>
@@ -317,6 +393,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
             { id: 'pendente', label: 'Pendentes' },
             { id: 'pago', label: 'Quitados / Recebidos' },
             { id: 'atrasado', label: 'Atrasados' },
+            { id: 'acumulado', label: `Acumulados (${monthlyItems.filter(i => i.pastUnpaidInstallments.length > 0).length})` },
             { id: 'cartao', label: 'Faturas de Cartão' }
           ].map(f => (
             <button
@@ -326,6 +403,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                 statusFilter === f.id
                   ? f.id === 'receita'
                     ? 'bg-emerald-600 text-white shadow-md'
+                    : f.id === 'acumulado'
+                    ? 'bg-amber-600 text-white shadow-md'
                     : 'bg-indigo-600 text-white shadow-md'
                   : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
@@ -417,10 +496,11 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {filteredItems.map(({ account, installment }) => {
+                {filteredItems.map(({ account, installment, pastUnpaidInstallments, pastUnpaidTotal, totalWithPast, isOnlyFromPastUnpaid }) => {
                   const isReceita = account.natureza === 'receita';
                   const isPaid = installment.status === 'pago';
                   const isLate = installment.status === 'atrasado';
+                  const hasAccumulated = pastUnpaidInstallments.length > 0 && !isPaid;
                   const isEditingValue = editingInstallmentId === installment.id;
 
                   return (
@@ -429,8 +509,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                       className={`hover:bg-slate-800/40 transition-colors ${
                         isPaid
                           ? 'bg-emerald-950/10'
-                          : isLate
-                          ? 'bg-rose-950/10'
+                          : isLate || hasAccumulated
+                          ? 'bg-amber-950/10'
                           : isReceita
                           ? 'bg-emerald-950/5'
                           : ''
@@ -451,36 +531,43 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
                       {/* Status */}
                       <td className="p-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-                            isPaid
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                              : isLate
-                              ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 animate-pulse'
-                              : isReceita
-                              ? 'bg-teal-500/15 border-teal-500/40 text-teal-300'
-                              : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                          }`}
-                        >
-                          {isPaid ? (
-                            <>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                              {isReceita ? 'Recebido' : 'Pago'}
-                            </>
-                          ) : isLate ? (
-                            <>
-                              <AlertCircle className="w-3 h-3 text-rose-400" /> Atrasado
-                            </>
-                          ) : isReceita ? (
-                            <>
-                              <Clock className="w-3 h-3 text-teal-400" /> A Receber
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-3 h-3 text-amber-400" /> Pendente
-                            </>
-                          )}
-                        </span>
+                        {hasAccumulated ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border bg-amber-500/15 border-amber-500/40 text-amber-300">
+                            <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                            Acumulado ({pastUnpaidInstallments.length} {pastUnpaidInstallments.length === 1 ? 'mês' : 'meses'})
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                              isPaid
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                                : isLate
+                                ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 animate-pulse'
+                                : isReceita
+                                ? 'bg-teal-500/15 border-teal-500/40 text-teal-300'
+                                : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                            }`}
+                          >
+                            {isPaid ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                {isReceita ? 'Recebido' : 'Pago'}
+                              </>
+                            ) : isLate ? (
+                              <>
+                                <AlertCircle className="w-3 h-3 text-rose-400" /> Atrasado
+                              </>
+                            ) : isReceita ? (
+                              <>
+                                <Clock className="w-3 h-3 text-teal-400" /> A Receber
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3 h-3 text-amber-400" /> Pendente
+                              </>
+                            )}
+                          </span>
+                        )}
                       </td>
 
                       {/* Nome / Descrição */}
@@ -498,11 +585,15 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                             <span className="font-bold text-white text-sm block">
                               {account.nome}
                             </span>
-                            {account.observacao && (
+                            {hasAccumulated ? (
+                              <span className="text-[10px] text-amber-400 font-mono block mt-0.5">
+                                Pendente em: {pastUnpaidInstallments.map(p => p.periodo).join(', ')}
+                              </span>
+                            ) : account.observacao ? (
                               <span className="text-[11px] text-slate-400 truncate max-w-[200px] block">
                                 {account.observacao}
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       </td>
@@ -545,13 +636,22 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
                       {/* Parcela / Duração */}
                       <td className="p-3.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono text-slate-300 text-[11px]">
-                          <Layers className="w-3 h-3 text-indigo-400" />
-                          {installment.numeroParcela} / {installment.totalParcelas} meses
-                        </span>
-                        <span className="block text-[10px] text-slate-500 mt-0.5">
-                          {account.tipoValor === 'fixo' ? 'Valor Fixo' : 'Valor Variável'}
-                        </span>
+                        {isOnlyFromPastUnpaid ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/40 border border-amber-500/30 font-mono text-amber-300 text-[10px]">
+                            <Layers className="w-3 h-3 text-amber-400" />
+                            Acúmulo de meses anteriores
+                          </span>
+                        ) : (
+                          <>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono text-slate-300 text-[11px]">
+                              <Layers className="w-3 h-3 text-indigo-400" />
+                              {installment.numeroParcela} / {installment.totalParcelas} meses
+                            </span>
+                            <span className="block text-[10px] text-slate-500 mt-0.5">
+                              {account.tipoValor === 'fixo' ? 'Valor Fixo' : 'Valor Variável'}
+                            </span>
+                          </>
+                        )}
                       </td>
 
                       {/* Valor */}
@@ -576,17 +676,28 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <div className="group/val flex items-center justify-end gap-1.5">
-                            <span className={`text-sm font-extrabold ${isReceita ? 'text-emerald-400' : 'text-white'}`}>
-                              {isReceita ? '+ ' : ''}R$ {Number(installment.valor).toFixed(2)}
-                            </span>
-                            <button
-                              onClick={() => handleStartEditingValue(installment)}
-                              className="opacity-0 group-hover/val:opacity-100 p-1 text-slate-400 hover:text-indigo-400 transition-opacity"
-                              title="Editar valor deste mês"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                            </button>
+                          <div className="group/val flex flex-col items-end">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className={`text-sm font-extrabold ${
+                                isReceita ? 'text-emerald-400' : hasAccumulated ? 'text-amber-300' : 'text-white'
+                              }`}>
+                                {isReceita ? '+ ' : ''}R$ {Number(hasAccumulated ? totalWithPast : installment.valor).toFixed(2)}
+                              </span>
+                              {!isOnlyFromPastUnpaid && (
+                                <button
+                                  onClick={() => handleStartEditingValue(installment)}
+                                  className="opacity-0 group-hover/val:opacity-100 p-1 text-slate-400 hover:text-indigo-400 transition-opacity"
+                                  title="Editar valor deste mês"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            {hasAccumulated && !isOnlyFromPastUnpaid && (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                (R$ {Number(installment.valor).toFixed(2)} mês + R$ {pastUnpaidTotal.toFixed(2)} atrasado)
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>
@@ -617,7 +728,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
 
                       {/* Ações */}
                       <td className="p-3.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
                           {isPaid ? (
                             <button
                               onClick={() => onRevertPayment(account, installment)}
@@ -629,16 +740,39 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                             </button>
                           ) : (
                             <button
-                              onClick={() => onOpenPayModal(account, installment)}
+                              onClick={() => onOpenPayModal(account, installment, pastUnpaidInstallments)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-md transition-all flex items-center gap-1.5 ${
                                 isReceita
                                   ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                                  : hasAccumulated
+                                  ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
                                   : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
                               }`}
-                              title={isReceita ? "Registrar recebimento e lançar no histórico" : "Registrar pagamento e lançar no histórico"}
+                              title={hasAccumulated ? "Pagar valor total acumulado das parcelas" : (isReceita ? "Registrar recebimento" : "Registrar pagamento")}
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              {isReceita ? 'Receber' : 'Pagar'}
+                              {isReceita ? 'Receber' : hasAccumulated ? 'Pagar Acumulado' : 'Pagar'}
+                            </button>
+                          )}
+
+                          {hasAccumulated && onCancelPastAccumulated && (
+                            <button
+                              onClick={() => onCancelPastAccumulated(account, pastUnpaidInstallments)}
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors flex items-center gap-1"
+                              title="Dispensar / Cancelar parcelas atrasadas de meses anteriores (mantém apenas este mês)"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Dispensar
+                            </button>
+                          )}
+
+                          {onCancelAccount && (
+                            <button
+                              onClick={() => onCancelAccount(account.id)}
+                              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Cancelar conta fixa (desativa e para todos os acúmulos futuros)"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
                             </button>
                           )}
 
@@ -669,10 +803,11 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
       ) : (
         /* Modo Cards */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredItems.map(({ account, installment }) => {
+          {filteredItems.map(({ account, installment, pastUnpaidInstallments, pastUnpaidTotal, totalWithPast, isOnlyFromPastUnpaid }) => {
             const isReceita = account.natureza === 'receita';
             const isPaid = installment.status === 'pago';
             const isLate = installment.status === 'atrasado';
+            const hasAccumulated = pastUnpaidInstallments.length > 0 && !isPaid;
 
             return (
               <div
@@ -680,6 +815,8 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                 className={`bg-slate-900 border rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all shadow-lg ${
                   isPaid
                     ? 'border-emerald-500/40 bg-gradient-to-b from-slate-900 to-emerald-950/20'
+                    : hasAccumulated
+                    ? 'border-amber-500/40 bg-gradient-to-b from-slate-900 to-amber-950/20'
                     : isLate
                     ? 'border-rose-500/40 bg-gradient-to-b from-slate-900 to-rose-950/20'
                     : isReceita
@@ -712,28 +849,50 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                       </div>
                     </div>
 
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                        isPaid
-                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                          : isLate
-                          ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                          : isReceita
-                          ? 'bg-teal-500/20 border-teal-500/40 text-teal-300'
-                          : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                      }`}
-                    >
-                      {isPaid ? (isReceita ? 'Recebido' : 'Pago') : isLate ? 'Atrasado' : isReceita ? 'A Receber' : 'Pendente'}
-                    </span>
+                    {hasAccumulated ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-500/20 border-amber-500/40 text-amber-300">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        Acumulado ({pastUnpaidInstallments.length}m)
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          isPaid
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                            : isLate
+                            ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                            : isReceita
+                            ? 'bg-teal-500/20 border-teal-500/40 text-teal-300'
+                            : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                        }`}
+                      >
+                        {isPaid ? (isReceita ? 'Recebido' : 'Pago') : isLate ? 'Atrasado' : isReceita ? 'A Receber' : 'Pendente'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-4 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Valor Previsto:</span>
-                      <span className={`font-mono font-extrabold text-sm ${isReceita ? 'text-emerald-400' : 'text-white'}`}>
-                        {isReceita ? '+ ' : ''}R$ {Number(installment.valor).toFixed(2)}
-                      </span>
+                      <span className="text-slate-400">Valor {hasAccumulated ? 'Total a Pagar:' : 'Previsto:'}</span>
+                      <div className="text-right">
+                        <span className={`font-mono font-extrabold text-sm ${
+                          isReceita ? 'text-emerald-400' : hasAccumulated ? 'text-amber-300' : 'text-white'
+                        }`}>
+                          {isReceita ? '+ ' : ''}R$ {Number(hasAccumulated ? totalWithPast : installment.valor).toFixed(2)}
+                        </span>
+                        {hasAccumulated && !isOnlyFromPastUnpaid && (
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            (R$ {Number(installment.valor).toFixed(2)} mês + R$ {pastUnpaidTotal.toFixed(2)} atrasado)
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    {hasAccumulated && (
+                      <div className="text-[10px] text-amber-400 font-mono bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
+                        Meses pendentes: {pastUnpaidInstallments.map(p => p.periodo).join(', ')}
+                      </div>
+                    )}
 
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-400">Vencimento / Prazo:</span>
@@ -745,7 +904,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-400">Duração / Período:</span>
                       <span className="font-mono text-indigo-300 font-semibold">
-                        {installment.numeroParcela} de {installment.totalParcelas} meses
+                        {isOnlyFromPastUnpaid ? 'Acúmulo de meses anteriores' : `${installment.numeroParcela} de ${installment.totalParcelas} meses`}
                       </span>
                     </div>
 
@@ -760,7 +919,7 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2 flex-wrap">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => onEditAccount(account)}
@@ -769,6 +928,15 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
+                    {onCancelAccount && (
+                      <button
+                        onClick={() => onCancelAccount(account.id)}
+                        className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Cancelar conta fixa"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => onDeleteAccount(account.id)}
                       className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
@@ -786,13 +954,26 @@ export const FixedAccountsTab: React.FC<FixedAccountsTabProps> = ({
                       <RotateCcw className="w-3 h-3" /> Desmarcar
                     </button>
                   ) : (
-                    <button
-                      onClick={() => onOpenPayModal(account, installment)}
-                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      {isReceita ? 'Registrar Recebimento' : 'Registrar Pagamento'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {hasAccumulated && onCancelPastAccumulated && (
+                        <button
+                          onClick={() => onCancelPastAccumulated(account, pastUnpaidInstallments)}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
+                          title="Dispensar acúmulo de meses anteriores"
+                        >
+                          Dispensar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onOpenPayModal(account, installment, pastUnpaidInstallments)}
+                        className={`px-3.5 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-all flex items-center gap-1.5 ${
+                          hasAccumulated ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        {isReceita ? 'Receber' : hasAccumulated ? 'Pagar Acumulado' : 'Pagar'}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
