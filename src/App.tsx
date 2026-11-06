@@ -197,6 +197,7 @@ export default function App() {
   const [payingAccount, setPayingAccount] = useState<FixedAccount | null>(null);
   const [payingInstallment, setPayingInstallment] = useState<FixedAccountInstallment | null>(null);
   const [payingPastInstallments, setPayingPastInstallments] = useState<FixedAccountInstallment[]>([]);
+  const [initialPaySelectedId, setInitialPaySelectedId] = useState<number | string | null>(null);
 
   const [showAddTxModal, setShowAddTxModal] = useState(false);
   const [showAddCard, setShowAddCard] = useState(false);
@@ -1532,7 +1533,30 @@ export default function App() {
     try {
       const isReceita = account.natureza === 'receita';
       const includedIds = paymentDetails.includedInstallmentIds || [];
-      const hasAccumulated = includedIds.length > 1;
+      const idsToMarkPaid = new Set<number | string>(
+        includedIds.length > 0 ? includedIds : [installment.id]
+      );
+
+      // Localiza as parcelas que estão sendo pagas e as que permanecerão pendentes
+      const paidInsts = (account.installments || []).filter(inst => idsToMarkPaid.has(inst.id));
+      const paidPeriods = paidInsts.map(i => i.periodo).sort();
+      const remainingUnpaidCount = (account.installments || []).filter(
+        inst => !idsToMarkPaid.has(inst.id) && inst.status !== 'pago' && inst.status !== 'cancelado'
+      ).length;
+
+      let parcelaDesc = '';
+      if (paidPeriods.length === 1) {
+        const p = paidInsts[0];
+        parcelaDesc = p ? `(${p.periodo} - Parcela ${p.numeroParcela}/${p.totalParcelas})` : `(${paidPeriods[0]})`;
+      } else if (paidPeriods.length > 1) {
+        parcelaDesc = `(Meses: ${paidPeriods.join(', ')} - ${paidPeriods.length} parcelas quitadas)`;
+      } else {
+        parcelaDesc = `(${installment.numeroParcela}/${installment.totalParcelas})`;
+      }
+
+      if (remainingUnpaidCount > 0) {
+        parcelaDesc += ` [${remainingUnpaidCount} pendente(s)]`;
+      }
 
       // 1. Cria o Lançamento na tabela `transactions` do histórico
       const txPayload = {
@@ -1543,14 +1567,12 @@ export default function App() {
         cartao_id: account.cartaoId || null,
         entrada: isReceita ? paymentDetails.valorPago : 0,
         saida: isReceita ? 0 : paymentDetails.valorPago,
-        comentario: `${isReceita ? 'Recebimento de Receita' : 'Pagamento Conta Fixa'}: ${account.nome} (${installment.numeroParcela}/${installment.totalParcelas}${
-          hasAccumulated ? ` + ${includedIds.length - 1} acumuladas` : ''
-        })${
+        comentario: `${isReceita ? 'Recebimento de Receita' : 'Pagamento Conta Fixa'}: ${account.nome} ${parcelaDesc}${
           paymentDetails.observacao ? ` - ${paymentDetails.observacao}` : ''
         }`,
         individuo: account.individuo,
         operacao: paymentDetails.operacao,
-        fixed_installment_id: typeof installment.id === 'number' ? installment.id : null
+        fixed_installment_id: typeof paidInsts[0]?.id === 'number' ? paidInsts[0].id : null
       };
 
       let newTxId = Date.now();
@@ -1600,17 +1622,12 @@ export default function App() {
         console.warn('Erro ao inserir transação:', txErr);
       }
 
-      const idsToMarkPaid = new Set<number | string>([
-        installment.id,
-        ...includedIds
-      ]);
-
-      // 2. Atualiza a Parcela da Conta Fixa para status 'pago' e vincula o ID da transação
+      // 2. Atualiza estritamente as Parcelas selecionadas para status 'pago' (deixando as demais pendentes)
       setFixedAccounts(prev => {
         const next = prev.map(acc => {
           if (acc.id !== account.id) return acc;
           const updatedInsts = (acc.installments || []).map(inst => {
-            if (idsToMarkPaid.has(inst.id) || (inst.periodo === installment.periodo && !inst.dataPagamento)) {
+            if (idsToMarkPaid.has(inst.id)) {
               return {
                 ...inst,
                 status: 'pago' as PaymentStatus,
@@ -2543,10 +2560,11 @@ export default function App() {
                 setShowAddFixedAccountModal(true);
               }}
               onDeleteAccount={handleDeleteFixedAccount}
-              onOpenPayModal={(account, installment, pastUnpaid) => {
+              onOpenPayModal={(account, installment, pastUnpaid, initialId) => {
                 setPayingAccount(account);
                 setPayingInstallment(installment);
                 setPayingPastInstallments(pastUnpaid || []);
+                setInitialPaySelectedId(initialId || null);
                 setShowPayModal(true);
               }}
               onRevertPayment={handleRevertPayment}
@@ -2684,11 +2702,13 @@ export default function App() {
           setPayingAccount(null);
           setPayingInstallment(null);
           setPayingPastInstallments([]);
+          setInitialPaySelectedId(null);
         }}
         onConfirmPayment={handleConfirmPayment}
         account={payingAccount}
         installment={payingInstallment}
         pastUnpaidInstallments={payingPastInstallments}
+        initialSelectedInstallmentId={initialPaySelectedId}
         accounts={accounts}
       />
 
